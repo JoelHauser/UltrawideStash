@@ -110,7 +110,7 @@ One million sorts before two billion, so the mod ran first and the dictionary wa
 Edge of Darkness profile at 16 columns that is 68 rows down to 43, with nothing stopping
 it. **A guard that reads an empty collection looks exactly like a guard that passed.**
 
-`ProfileScan` reads `user/profiles/*.json` off disk instead, which takes the ordering
+`ProfileStore` reads `user/profiles/*.json` off disk instead, which takes the ordering
 question off the table. It fails safe: anything it cannot parse returns `Confident = false`,
 and `StashWidener` then passes the **vanilla row count** as the occupancy floor, so
 `StashLayout` clamps rows to vanilla and nothing shortens.
@@ -170,7 +170,7 @@ Rules worth keeping:
 - **All-or-nothing per stash.** Every profile is planned before any is written; an item
   that fits neither the stash nor the table aborts the whole stash, template change
   included.
-- **Backup, temp file, then replace.** `ProfileStore.ApplyMoves` copies to a timestamped
+- **Backup, temp file, then replace.** `ProfileStore.ApplyChanges` copies to a timestamped
   `.bak`, writes a `.tmp`, and only then overwrites.
 - Biggest-first placement, because singles placed first fragment the grid and a large
   case then fails on space that existed.
@@ -179,7 +179,7 @@ Rules worth keeping:
 
 `StashOccupancy.Place` computes `Y + height` **with rotation applied**, because
 `ItemRotation.Vertical = 1` swaps the template's width and height. Getting that backwards
-under-reports depth, which is the direction that loses items. `ProfileScan.Rotation` reads
+under-reports depth, which is the direction that loses items. `ProfileStore`'s rotation reading
 an unrecognised rotation value **as rotated** for the same reason.
 
 Only the stash's direct children count. An item inside a backpack has a `y` belonging to
@@ -271,18 +271,37 @@ both ends.
 ## How this is put together
 
 ```
-src/UltrawideStash.Server/
+src/UltrawideStash.Server/            .NET 10, SPTarkov.Server.Core
   ModMetadata.cs      the one IModMetadata; SPT throws on a second in a folder
   StashSettings.cs    ultrawidestash.config.json, written with defaults on first run
-  StashLayout.cs      the shape decision, pure ints, no SPT type -- the tested part
-  StashOccupancy.cs   footprint maths, also pure -- the other tested part
+  StashLayout.cs      the shape decision -- pure ints, no SPT type
+  StashOccupancy.cs   footprint maths with rotation -- also pure
+  StashRepack.cs      relocation into the stash, and overflow into the sorting table
+  ProfileStore.cs     reads a profile's stash off disk; writes moves back, with backup
   StashWidener.cs     IOnLoad at PostLoad; the only file that touches SPT or the database
 
-src/UltrawideStash.Probe/
+src/UltrawideStash.Probe/             net472, BepInEx -- read-only, changes nothing
   GameTypes.cs        every game member, resolved by patched name, in one place
-  StashMeasure.cs     the walk, the arithmetic and the report
+  StashMeasure.cs     the walk up the RectTransform chain, and the report
+  Companions.cs       which stash-touching plugins are loaded, for the report
   ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
+
+tests/UltrawideStash.Server.Tests/    xunit, 75 tests
+  StashLayoutTests.cs           column/row decisions against the five real stashes
+  StashOccupancyTests.cs        footprint and rotation arithmetic
+  StashRepackTests.cs           relocation, including the narrow-to-vanilla path
+  ProfileStoreTests.cs          read/write round trips against real files on disk
+  SortingTableOverflowTests.cs  the 7-wide overflow, end to end through a profile
+
+scripts/
+  pack.ps1            build both halves, test, check references, stage, zip, install
+  test-database.ps1   the five stash ids against a real items.json
+  repair-stash.ps1    standalone recovery; needs only PowerShell, ships in the zip
 ```
+
+The four pure files -- `StashLayout`, `StashOccupancy`, `StashRepack` and the parsing
+half of `ProfileStore` -- carry all the logic worth testing and touch no SPT type between
+them. `StashWidener` is the only place that knows SPT exists, and it is deliberately thin.
 
 ### Why the probe references no game assembly
 
@@ -293,7 +312,7 @@ Same reason as LoadingRaid, and worth not relearning: the `Assembly-CSharp.dll` 
 that has never been launched still holds the unpatched original -- `C:\HUH` is one.
 
 `pack.ps1` asserts the built DLL carries no `Assembly-CSharp` and no `spt-*` reference.
-As of 0.1.0 it references only `mscorlib`, `System.Core`, `BepInEx`, `0Harmony`,
+As of 0.5.0 it references only `mscorlib`, `System.Core`, `BepInEx`, `0Harmony`,
 `UnityEngine.CoreModule` and `UnityEngine.UIModule`.
 
 `UnityEngine.dll` (the facade) **is** referenced at compile time -- BepInEx's
@@ -368,23 +387,31 @@ game and guessing at it.
 
 ## Untested, and what to look for
 
-In rough order of risk:
+**Nothing in this repo has executed in the game.** In rough order of risk:
 
-1. **Does the widened grid draw, or clip?** The whole point. Read the probe's
+1. **Writing to profiles.** 0.4.0 onward edits the player's profile JSON. Backup, temp
+   file, replace-last, all-or-nothing per stash, and 75 tests -- but it has never written
+   a real profile. On a first widen the log should say **`0 item(s) relocated`**, because
+   widening alone can strand nothing. Anything else on a plain widen is a bug.
+2. **Does the widened grid draw, or clip?** The whole point. Read the probe's
    `STRETCH`/`fixed` column.
-2. **Does the Harmony patch fire?** `SimpleStashPanel.Show` patched with
+3. **The sorting-table overflow.** Re-parenting an item to the sorting table
+   (`parentId`, `slotId` "hideout") is written from the JSON shape, not from watching the
+   game do it. Only fires when the stash cannot take everything back.
+4. **Does the Harmony patch fire?** `SimpleStashPanel.Show` patched with
    `MonoBehaviour __instance`. The base chain is SimpleStashPanel -> UIInputNode ->
    InputNode -> InputNodeAbstract -> `Sirenix.OdinInspector.SerializedMonoBehaviour` ->
-   MonoBehaviour, so it is a genuine supertype and Harmony should accept it. Not run.
-3. **Is the tallest GridView the stash?** True on paper by a wide margin. An open
+   MonoBehaviour, so it is a genuine supertype and Harmony should accept it.
+5. **Is the tallest GridView the stash?** True on paper by a wide margin. An open
    container has its own GridView.
-4. **The occupancy scan on a real profile.** Never run against one -- there is no played
-   profile on this box. `Item.Location` is typed `object` and is an `int` for magazines,
-   which is why the scan pattern-matches on `ItemLocation` rather than casting.
-5. **A stash whose template changed between sessions.** Widening should be
-   non-destructive. That is reasoning, not observation.
-6. **`Grid.OutOfBoundsItems`** is resolved optionally and reported. If it ever says
-   anything but `none`, something has gone wrong and the report says to restore a backup.
+6. **A real played profile.** The only one on this box is a 0.4 KB stub, so every profile
+   test runs against synthesised JSON. The key uncertainty is whether a real profile has
+   shapes the parser skips -- it ignores anything whose `location` is not an object,
+   which is right for magazines but has not met the full variety.
+7. **`repair-stash.ps1` against a real profile.** Verified on synthesised data only, and
+   it sizes every item as 1x1 because it has no database.
+8. **`Grid.OutOfBoundsItems`** is resolved optionally and reported. Anything but `none`
+   means something went wrong.
 
 ## The residual risk, and why it stops there
 
@@ -438,12 +465,20 @@ invariant ASS asserts, plus a census of which companion plugins are loaded. Buil
 install, on update and on uninstall. Answering it properly found that 0.2.0's occupancy
 guard never worked -- see the load-order bug above -- and that the game rescues
 out-of-bounds items to the Sorting Table by itself, which is why that failure would have
-been survivable. `ProfileScan` replaces the guard and fails safe. 64 logic tests.
+been survivable. A disk-reading scan (now `ProfileStore`) replaced the guard and fails
+safe. 64 logic tests at the time.
 
 **0.4.0**, because "we cannot have this be the case at all" -- correct response to being
 told an uninstall could leave items invisible. The mod now relocates out-of-bounds items
 in the profile itself rather than hoping the game will. Uninstalling is a documented,
-tested procedure: set columns to 10, start once, delete. 68 logic tests.
+tested procedure: set columns to 10, start once, delete. 68 logic tests at the time.
+
+**0.5.0** overflows into the sorting table rather than refusing when a stash is too full
+to narrow, which removes the "too full to uninstall" dead end. The sorting table's
+`cellsH: 0, cellsV: 0` are stretch flags, not a size, and `ShowGrid` clamps it to 7 wide.
+Also ships `scripts/repair-stash.ps1`, a standalone PowerShell recovery that needs neither
+the mod nor a matching SPT, so the fix for a botched uninstall outlives the thing that
+caused it. 75 logic tests.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log

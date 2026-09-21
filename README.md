@@ -5,7 +5,7 @@ space an ultrawide monitor has and a 16:9 one does not.
 
 **Nothing in this repo has ever run in the game.** Everything below was read out of the
 game assembly and SPT's database by static analysis. The logic is tested; the result on
-screen is not. Version 0.4.0 is a first cut plus a measuring tool, not a finished mod:
+screen is not. Version 0.5.0 is a first cut plus a measuring tool, not a finished mod:
 it makes the stash wider and tells you whether the UI can draw it. It does not yet fix
 the UI if the answer is no.
 
@@ -55,15 +55,19 @@ is for.
 
 ---
 
-## The two halves
+## What ships
 
-| | Installs to | Does |
+| | Goes to | Does |
 | --- | --- | --- |
-| `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width |
+| `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width, and keeps stored items inside it |
 | `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Measures the stash panel and logs it. Changes nothing |
+| `repair-stash.ps1` | `SPT_Runtime/user/mods/UltrawideStash/` | Standalone recovery. Needs only PowerShell — not the mod |
 
-They are independent. The probe is useful on a vanilla 10-wide stash too — it still
-reports how much room there is.
+The server half also writes two files into its own folder on first start:
+`ultrawidestash.config.json` and `HOW-TO-UNINSTALL.txt`.
+
+The two DLLs are independent. The probe is useful on a vanilla 10-wide stash too — it
+still reports how much room there is.
 
 ## Install
 
@@ -308,6 +312,17 @@ Two ways back, and neither loses anything:
 
 ---
 
+## What it looks like
+
+An interactive simulation of the stash screen at ultrawide resolutions, driven by the
+real canvas maths and the real 63px cell, with a toggle for the two possible panel
+behaviours:
+
+**https://claude.ai/artifact/F1W8fdfyszuuhuGBUocwr1**
+
+It is a mockup, not a screenshot — the panel proportions and the font are guesses, and
+the page says which parts are which.
+
 ## The measurement procedure
 
 The probe answers the one question that decides whether a client-side UI fix is needed.
@@ -371,27 +386,34 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-75 logic tests and 16 database checks pass.
+75 logic tests and 16 database checks pass. The probe carries no `Assembly-CSharp` or
+`spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
-reading their code - see Compatibility - not by running them. None of the three is
+reading their code — see Compatibility — not by running them. None of the three is
 installed on the development machine.
 
-Untested, in rough order of risk:
+**Nothing here has run in the game.** Untested, in rough order of risk:
 
+- **Writing to profiles.** From 0.4.0 the mod edits your profile JSON to keep items
+  reachable. It backs up first, writes to a temp file, replaces last, and refuses rather
+  than half-finishing — but it has never written a real profile. On a first widen the log
+  should say `0 item(s) relocated`, because widening alone cannot strand anything.
+  Anything else on a plain widen is a bug worth reporting.
 - **Whether the widened grid is drawn or clipped.** The whole reason the probe exists.
+- **The Sorting Table overflow.** Re-parenting an item into the Sorting Table is written
+  from the JSON shape rather than from watching the game do it. It only fires when the
+  stash cannot take everything back.
 - **Whether the probe's Harmony patch fires at all.** `SimpleStashPanel.Show` is patched
   with `MonoBehaviour __instance`, which is a genuine supertype, but that has not run.
 - **Whether the tallest GridView is really the stash.** It is by a wide margin on paper
   — 30 rows minimum against a backpack's handful — but an open container has its own.
-- **The occupancy scan against a real played profile.** It is covered by tests against
-  synthesised profile JSON, but the only profile on the development machine is an
-  unplayed stub, so it has never met a real one.
-- **What the game does with a stash whose template changed between sessions.** Widening
-  should be non-destructive; that is reasoning, not observation.
-- **The 0.2.0 diagnostics themselves.** The companion census reads BepInEx's
-  `Chainloader.PluginInfos`, and the layout line reads `Grid.Layout` — neither has run,
-  and the three GUIDs watched for have never been seen matching a live plugin.
+- **A real played profile.** Every profile test runs against synthesised JSON; the only
+  profile on the development machine is an unplayed stub.
+- **`repair-stash.ps1` on a real profile.** Verified against synthesised data only, and
+  it treats every item as 1×1 because it has no item database to size them from.
+- **The probe's diagnostics.** The companion census reads BepInEx's
+  `Chainloader.PluginInfos` and the layout line reads `Grid.Layout` — neither has run.
 
 ## Repository
 
