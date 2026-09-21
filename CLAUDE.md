@@ -2,10 +2,11 @@
 
 Makes the EFT stash wider than 10 columns so it fills the horizontal room an ultrawide
 has. Two halves: an SPT server mod that changes the stash item template, and a
-**read-only** BepInEx probe that measures the stash panel and logs what it finds.
+**read-only** BepInEx probe that measures the stash panel, logs what it finds, and
+writes the measurement where the server reads it.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 75 logic tests and 16 database checks
+assembly and SPT's database by static analysis. 136 logic tests and 19 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -245,16 +246,35 @@ grid/stash/column/cell words: UI Fixes' only hits are two
   `UIFixes.SortPatches+StackFirstPatch`, so those two coordinate between themselves and
   neither needs anything from us.
 
-### The hideout bonus composes; do not try to scale it
+### The hideout stash bonus is a TEMPLATE SWAP, not added rows
 
-`InventoryHelper.GetPlayerStashSize(PmcData)` reads `CellsH`/`CellsV` off the template
-(falling back to 10 and 66 when the value is 0) and then **adds** the profile's
-`StashSize` bonus to the rows. So our edit is the base and the bonus stacks on top.
+This was recorded wrongly until 0.6.0 and it hid a real item-stranding bug. Read out of
+`SPT_Runtime\SPT_Data\database\hideout\areas.json`, area **type 3**, `_id`
+`5d484fc0654e76006657e0ab`:
 
-Consequence: a bonus row is worth `columns` cells, so it is worth more when wider.
-`compensateRows` therefore holds the **base** at vanilla, and a profile with hideout
-bonuses ends up above vanilla overall. Left alone deliberately -- scaling it would mean
-patching `GetPlayerStashSize`, which is where every other stash mod also lives.
+```
+stage 1 -> StashSize templateId 566abbc34bdc2d92178b4576  value 0.0   Standard    10x30
+stage 2 -> StashSize templateId 5811ce572459770cba1a34ea  value 0.0   Left Behind 10x40
+stage 3 -> StashSize templateId 5811ce662459770f6f490f32  value 0.0   Prepare     10x50
+stage 4 -> StashSize templateId 5811ce772459770e9e5f9532  value 0.0   EoD         10x68
+```
+
+The bonus carries a **`templateId`** and its **`value` is `0.0`**. So upgrading the
+hideout Stash area does not add rows -- it moves the player onto a different one of the
+five templates this mod edits. A Standard-edition player climbs Standard -> Left Behind
+-> Prepare -> Edge of Darkness as they build it. **Not everybody is EoD or Unheard, and
+nobody stays on the template their edition started them on.**
+
+`InventoryHelper.GetPlayerStashSize(PmcData)` does still read `CellsH`/`CellsV` off the
+template (falling back to 10 and 66 when the value is 0) and then **add** the `StashSize`
+bonus *value* to the rows -- so an additive bonus from another mod composes with our
+edit. The vanilla hideout just contributes zero. A bonus row is worth `columns` cells so
+it is worth more when wider; `compensateRows` holds the **base** at vanilla and a profile
+carrying one ends up above vanilla overall. Left alone deliberately -- scaling it would
+mean patching `GetPlayerStashSize`, which is where every other stash mod also lives.
+
+**`StashLadder.cs` owns the ordering**, and `test-database.ps1` asserts it against the
+real `areas.json` rather than trusting this note.
 
 ### Why compensation rounds UP (changed in 0.2.0)
 
@@ -273,20 +293,28 @@ both ends.
 ```
 src/UltrawideStash.Server/            .NET 10, SPTarkov.Server.Core
   ModMetadata.cs      the one IModMetadata; SPT throws on a second in a folder
-  StashSettings.cs    ultrawidestash.config.json, written with defaults on first run
+  StashSettings.cs    ultrawidestash.config.json; "columns" is "auto" or an int
+  StashFit.cs         canvas arithmetic -- aspect ratio to canvas width to columns
+  Measurement.cs      reads ultrawidestash.measured.json, the probe's answer
+  ColumnChoice.cs     config + measurement -> one width, with a reason for the log
+  StashLadder.cs      the hideout upgrade order, and the row floor it forces
   StashLayout.cs      the shape decision -- pure ints, no SPT type
   StashOccupancy.cs   footprint maths with rotation -- also pure
   StashRepack.cs      relocation into the stash, and overflow into the sorting table
   ProfileStore.cs     reads a profile's stash off disk; writes moves back, with backup
   StashWidener.cs     IOnLoad at PostLoad; the only file that touches SPT or the database
 
-src/UltrawideStash.Probe/             net472, BepInEx -- read-only, changes nothing
+src/UltrawideStash.Probe/             net472, BepInEx -- changes nothing in the game
   GameTypes.cs        every game member, resolved by patched name, in one place
   StashMeasure.cs     the walk up the RectTransform chain, and the report
+  MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
   ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
 
-tests/UltrawideStash.Server.Tests/    xunit, 75 tests
+tests/UltrawideStash.Server.Tests/    xunit, 136 tests
+  StashFitTests.cs              canvas width per aspect, and the conservative ceiling
+  ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
+  StashLadderTests.cs           the hideout ladder, and the stranding it prevents
   StashLayoutTests.cs           column/row decisions against the five real stashes
   StashOccupancyTests.cs        footprint and rotation arithmetic
   StashRepackTests.cs           relocation, including the narrow-to-vanilla path
@@ -383,7 +411,26 @@ game and guessing at it.
   same trap and it was walked into anyway.
 - **`ConvertFrom-Json` cannot read the big SPT tables** (keys differing only by case,
   case-insensitive parser). `test-database.ps1` walks lines instead, which is also far
-  quicker on 18 MB. Inherited from the LoadingRaid notes and still true.
+  quicker on 18 MB. Inherited from the LoadingRaid notes and still true. `areas.json` is
+  small and well-behaved, so the ladder check does parse it -- with
+  `JavaScriptSerializer`, not `ConvertFrom-Json`.
+- **A constant derived from the development machine, documented as though it were
+  universal.** `MaxColumns = 40` was written up as "the real ceiling" with the arithmetic
+  to prove it -- and the arithmetic was right, for one 3440x1440 monitor. On the 1920-wide
+  canvas every 16:9 screen gets, it was 601px past the edge of the screen. The test that
+  guarded it asserted the cap against *that same monitor*, so it passed. **When a number
+  comes from the box you are sitting at, the test has to feed it a box you are not.**
+  `StashFitTests` now runs ten screen shapes.
+- **"Bonus" in a database field name does not mean it adds anything.** The hideout's
+  `StashSize` bonus carries a `templateId` and a `value` of `0.0`; it swaps the stash
+  template rather than adding rows. Reading the name and the summary of
+  `GetPlayerStashSize` gave a confident wrong answer that sat in these notes and the
+  README through four releases, and it concealed a stranding bug. Same family as
+  `MoveBrokenItemsToSortingTable` above: **follow the field to its data before writing
+  down what it does.**
+- **A per-entity guard is not a guard when entities migrate.** The row clamp was correct
+  for each template in isolation and wrong for a player, because players move between
+  templates. Ask what can change identity under a rule before trusting the rule.
 
 ## Untested, and what to look for
 
@@ -479,6 +526,99 @@ to narrow, which removes the "too full to uninstall" dead end. The sorting table
 Also ships `scripts/repair-stash.ps1`, a standalone PowerShell recovery that needs neither
 the mod nor a matching SPT, so the fix for a botched uninstall outlives the thing that
 caused it. 75 logic tests.
+
+**0.6.0** came from the user asking two questions about other people's machines: will a
+1920x1080 player have their UI squished, and should they be trusted with a free-form
+column count? Both answers were worse than expected, and a third problem fell out of the
+hideout question they asked alongside.
+
+### The squish question has a clean answer: it cannot squish
+
+`ConstantPixelSize` means a cell is always 63 logical px. Nothing scales to fit. An
+over-wide grid **overflows and is clipped**, it does not compress -- and
+`GridView.OnGridResized` writes `LayoutElement.minWidth`, which pushes outward. So the
+failure mode is invisible columns that look exactly like lost items, which is the worst
+possible shape for a support request and nothing to do with squishing.
+
+### Resolution is irrelevant; aspect ratio is everything
+
+`min(w/1920, h/1080)` means **1920x1080, 2560x1440 and 3840x2160 all get a 1920-wide
+canvas**. A 4K player has the same width budget as a 1080p one: zero. 16:10 gains height,
+not width. Only wider-than-16:9 gains anything, and it is `1080 * aspect - 1920` px.
+
+Two things were therefore sized to one monitor and shipped to everybody:
+
+- **`MaxColumns = 40`** was derived from the 2580-wide 3440x1440 canvas. On a 1920 canvas
+  40 columns is 2521px -- 601px wider than the entire screen. The cap constrained nobody
+  who needed constraining. It is now `StashFit.AbsoluteMaxColumns = 100`, a typo guard
+  only, and the real ceiling is per screen.
+- **`columns: 16` as the default** is 1009px against vanilla's 631, on a canvas with no
+  spare width. The default is now `"auto"`.
+
+`StashFit.ConservativeColumns` is the no-measurement fallback and is deliberately
+pessimistic: `10 + floor((canvasWidth - 1920) / 63)`. It grants only canvas width that
+exists beyond 16:9 and assumes the panel has zero slack of its own, because the slack is
+the one thing the server cannot see. On any 16:9 screen that is vanilla 10 -- **an
+unmeasured 16:9 install changes nothing at all**, which is the correct default.
+
+### The measurement handshake
+
+The probe already computed `ColumnsThatFit(widestStretch)` and only logged it.
+`MeasurementFile` now writes `ultrawidestash.measured.json` into the server mod's folder
+(`<SPT>\BepInEx\plugins` -> up two -> `SPT_Runtime\user\mods\UltrawideStash`), and
+`Measurement` + `ColumnChoice` read it back. Same discipline as `ScreenFit` in
+LoadingRaid, including that **a measurement only affects the next server start**.
+
+`ColumnChoice` is where the whole safety argument lives, and it is pure. Order of
+authority: measurement, then the declared-screen estimate, then `ignoreMeasurement` for
+someone who wants to override both. An explicit number is clamped to the ceiling and the
+log says so; the reason string is always populated, because the failure being guarded is
+silent.
+
+### The hideout ladder -- a real stranding bug, found by the user's question
+
+The notes said the `StashSize` hideout bonus **adds rows**. It does not. From
+`areas.json`, area type 3 `5d484fc0654e76006657e0ab`: the bonus carries a **`templateId`**
+and its **`value` is `0.0`**. Upgrading the Stash area *swaps the player onto a different
+one of the five templates this mod edits* -- Standard, Left Behind, Prepare, Edge of
+Darkness, in that order.
+
+Row compensation clamps up to the deepest occupied row, and that clamp was computed per
+template from the profiles currently on it. So a Standard player with items at row 28 got
+Standard at 16x**28**, while Left Behind -- which nobody was on -- was planned at
+16x**25**. Upgrading the hideout shortened their stash by three rows and stranded
+everything on rows 25-27, mid-session, with no repack until the next start.
+
+`StashLadder.RowFloors` carries the floor **up** the ladder as a running maximum, since a
+profile can only ever move up. Deliberately not a global maximum: on a shared install one
+player's deep EoD stash must not hand another player rows they never earned on a rung
+they cannot reach.
+
+`test-database.ps1` now asserts the ladder against the real `areas.json` -- the order, that
+every stage points at a template the mod widens, and that capacity rises -- so a future SPT
+change fails the suite rather than the player.
+
+**The regression was proved before the fix was believed.**
+`TheOldPerTemplateClampGenuinelyDidStrandItems` reproduces the old per-template clamp and
+asserts 28 -> 25, because this repo's notes already record a fix and test pair that were
+both reverted when the test turned out to pass against the unfixed code.
+
+### Left undone, deliberately
+
+**Rows still drift between restarts.** `StashWidener` recomputes rows every start, so a
+player who clears out the bottom of a deep stash sees it shrink back toward the compensated
+target on the next start. Nothing is lost -- those rows were empty, and the ladder floor
+covers the upgrade case -- but the stash visibly changes size with no action from the
+player. Fixing it means persisting the applied shape per profile, which is a state file
+this mod does not otherwise need. Flagged to the user, not built.
+
+### Still not run in the game
+
+Build clean at 0 warnings, 136 logic tests, 19 database checks, references still clean,
+packed to `releases\UltrawideStash_V0.6.0.zip`. The new untested surface is the handshake
+itself: the probe writing the file, and the server reading it. Both halves fail safe if it
+does not work, but the happy path is unproven -- check the file appears after opening the
+stash, and that the next start logs `auto: N columns, from the probe's measurement`.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log

@@ -199,9 +199,22 @@ namespace UltrawideStash.Probe
                 canvas != null ? ((RectTransform)canvas.transform).rect.width : Screen.width / scale,
                 widestStretch));
 
+            var fits = ColumnsThatFit(widestStretch);
+
             sb.AppendLine(string.Format(
                 "columns that would fit the widest stretching ancestor: {0} (you have {1})",
-                ColumnsThatFit(widestStretch), columns));
+                fits, columns));
+
+            // Hand the number to the server half rather than leaving the player to
+            // read it out of a log and copy it into a config. A measurement only takes
+            // effect on the next server start -- the grid on screen was built before
+            // this ran -- which is the same rule ScreenFit follows in LoadingRaid.
+            var canvasWidth = canvas != null
+                ? (int)Math.Round(((RectTransform)canvas.transform).rect.width)
+                : (int)Math.Round(Screen.width / scale);
+
+            sb.AppendLine(MeasurementFile.Write(
+                fits, Screen.width, Screen.height, canvasWidth, widestStretch));
 
             sb.Append("=============================");
 

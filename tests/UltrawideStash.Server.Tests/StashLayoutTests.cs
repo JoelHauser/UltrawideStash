@@ -126,10 +126,13 @@ public class StashLayoutTests
         Assert.Equal(68, plan.Rows);
     }
 
+    // 41 used to belong in this list, back when the cap was a constant 40 taken from
+    // one 3440x1440 monitor. The screen-aware ceiling lives in ColumnChoice now and
+    // StashLayout keeps only a bound on absurdity, so 41 is an ordinary width here and
+    // is tested as such below.
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    [InlineData(41)]
     [InlineData(1000)]
     [InlineData(-4)]
     public void ColumnsOutsideTheRangeAreRefused(int target)
@@ -138,6 +141,17 @@ public class StashLayoutTests
 
         Assert.False(plan.Applied);
         Assert.Equal(10, plan.Columns);
+    }
+
+    [Fact]
+    public void AWidthPastTheOldHardCodedCapIsNoLongerRefusedHere()
+    {
+        // A 32:9 5120x1440 screen has a 3840-wide canvas, which fits 60 columns. The
+        // old constant would have refused every one past 40 regardless of screen.
+        var plan = StashLayout.For(10, 68, 41, compensateRows: true, deepestOccupiedRow: 0);
+
+        Assert.True(plan.Applied);
+        Assert.Equal(41, plan.Columns);
     }
 
     [Fact]
@@ -227,18 +241,32 @@ public class StashLayoutTests
     /// reachable on any consumer screen at that height.
     /// </summary>
     [Fact]
-    public void TheColumnCapIsTheUltrawideCeiling()
+    public void TheRemainingCapIsOnlyATypoGuard()
     {
-        const float ultrawideCanvasWidth = 3440f / (1440f / 1080f);
+        // It must not constrain any real screen. A triple-monitor 5760x1080 canvas is
+        // 5760 logical units and fits 91 columns; the absolute cap sits above that, so
+        // the only thing it stops is a config holding a nonsense number.
+        Assert.True(
+            StashLayout.MaxColumns >= StashFit.ColumnsThatFit(StashFit.CanvasWidth(5760, 1080)),
+            "the absolute cap must not be the binding limit on a real screen");
 
-        Assert.Equal(2580f, ultrawideCanvasWidth, 0.5);
+        var plan = StashLayout.For(
+            10, 68, StashLayout.MaxColumns + 1, compensateRows: true, deepestOccupiedRow: 0);
+
+        Assert.False(plan.Applied);
+    }
+
+    [Fact]
+    public void TheOldHardCodedCapWasWiderThanA16By9ScreenEntirely()
+    {
+        // The reason the constant had to go, kept as an assertion so it cannot come
+        // back: 40 columns is 2521px, and every 16:9 screen -- 1080p, 1440p, 4K -- has
+        // a canvas exactly 1920 units wide.
+        Assert.Equal(1920, StashFit.CanvasWidth(1920, 1080));
+        Assert.Equal(1920, StashFit.CanvasWidth(3840, 2160));
 
         Assert.True(
-            StashLayout.MaxColumns * 63 + 1 <= ultrawideCanvasWidth,
-            "the cap should be reachable on the screen this mod was written for");
-
-        Assert.True(
-            (StashLayout.MaxColumns + 1) * 63 + 1 > ultrawideCanvasWidth,
-            "one column past the cap should not fit");
+            StashFit.WidthOfColumns(40) > StashFit.CanvasWidth(1920, 1080),
+            "40 columns does not fit a 16:9 canvas, so it was never a safe universal cap");
     }
 }

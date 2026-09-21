@@ -63,7 +63,7 @@ Write-Host "Reading $itemsPath" -ForegroundColor Cyan
 # the file is walked as lines instead, which is also far quicker on 18 MB.
 $lines = [System.IO.File]::ReadAllLines($itemsPath)
 
-# What the mod claims, mirrored from StashWidener.PlayerStashes and the _name fields.
+# What the mod claims, mirrored from StashLadder.Rungs and the _name fields.
 $expected = [ordered]@{
     '566abbc34bdc2d92178b4576' = @{ Edition = 'Standard';            Rows = 30 }
     '5811ce572459770cba1a34ea' = @{ Edition = 'Left Behind';         Rows = 40 }
@@ -162,6 +162,124 @@ Test-That "every '... stash 10xN' item is either handled or deliberately exclude
     if ($unhandled.Count -gt 0) {
         Write-Host "        unhandled: $($unhandled -join ', ')" -ForegroundColor Yellow
         return $false
+    }
+
+    return $true
+}
+
+# ---- the hideout stash ladder ------------------------------------------------
+#
+# Not everybody plays Edge of Darkness. A Standard player upgrades the hideout's
+# Stash area and the game moves them onto a different stash template -- the area's
+# StashSize bonus carries a templateId, not a row count, and its value is 0.
+#
+# StashLadder.Rungs has to be in that order, or the row floor it computes does not
+# cover the rung a player is about to arrive on and an upgrade strands their items.
+# So the order is checked against the database rather than trusted.
+
+$areasPath = Join-Path $SPTPath 'SPT_Runtime\SPT_Data\database\hideout\areas.json'
+
+Write-Host ''
+Write-Host "Reading $areasPath" -ForegroundColor Cyan
+
+# The ladder as StashLadder.cs declares it, first four rungs -- the hideout only
+# climbs as far as Edge of Darkness; The Unheard Edition is edition-only.
+$ladder = @(
+    '566abbc34bdc2d92178b4576',
+    '5811ce572459770cba1a34ea',
+    '5811ce662459770f6f490f32',
+    '5811ce772459770e9e5f9532'
+)
+
+function Get-StashArea {
+    param([string] $Path)
+
+    Add-Type -AssemblyName System.Web.Extensions
+    $ser = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+    $ser.MaxJsonLength = [int]::MaxValue
+
+    $areas = $ser.DeserializeObject((Get-Content $Path -Raw))
+
+    return $areas | Where-Object { $_.type -eq 3 }
+}
+
+Test-That "the hideout Stash area upgrades through the templates the mod edits, in order" {
+    if (-not (Test-Path $areasPath)) {
+        Write-Host "        no areas.json at $areasPath" -ForegroundColor Yellow
+        return $false
+    }
+
+    $area = Get-StashArea -Path $areasPath
+
+    if (-not $area) {
+        Write-Host '        no area of type 3 (Stash) found' -ForegroundColor Yellow
+        return $false
+    }
+
+    if ($area._id -ne '5d484fc0654e76006657e0ab') {
+        Write-Host "        Stash area id is $($area._id), not the documented one" -ForegroundColor Yellow
+        return $false
+    }
+
+    $stages = @()
+
+    foreach ($key in ($area.stages.Keys | Sort-Object { [int] $_ })) {
+        foreach ($bonus in $area.stages[$key].bonuses) {
+            if ($bonus.type -eq 'StashSize' -and $bonus.templateId) {
+                $stages += $bonus.templateId
+            }
+        }
+    }
+
+    if ($stages.Count -ne $ladder.Count) {
+        Write-Host "        $($stages.Count) StashSize stages, expected $($ladder.Count)" -ForegroundColor Yellow
+        Write-Host "        found: $($stages -join ', ')" -ForegroundColor Yellow
+        return $false
+    }
+
+    for ($i = 0; $i -lt $ladder.Count; $i++) {
+        if ($stages[$i] -ne $ladder[$i]) {
+            Write-Host "        stage $($i + 1) is $($stages[$i]), expected $($ladder[$i])" -ForegroundColor Yellow
+            return $false
+        }
+    }
+
+    return $true
+}
+
+Test-That "every hideout stash stage points at a template the mod actually widens" {
+    if (-not (Test-Path $areasPath)) { return $false }
+
+    $area = Get-StashArea -Path $areasPath
+
+    foreach ($key in $area.stages.Keys) {
+        foreach ($bonus in $area.stages[$key].bonuses) {
+            if ($bonus.type -ne 'StashSize' -or -not $bonus.templateId) { continue }
+
+            # A stage pointing somewhere the mod does not edit means a player would
+            # upgrade into a vanilla 10-wide stash and strand everything past x=9.
+            if (-not $expected.Contains($bonus.templateId)) {
+                Write-Host "        stage $key -> $($bonus.templateId), which the mod does not widen" -ForegroundColor Yellow
+                return $false
+            }
+        }
+    }
+
+    return $true
+}
+
+Test-That "the hideout stash ladder rises in capacity, so no upgrade is a downgrade" {
+    $previous = 0
+
+    foreach ($id in $ladder) {
+        $rows = $expected[$id].Rows
+
+        if ($rows -lt $previous) {
+            Write-Host "        $id has $rows rows, fewer than the $previous below it" -ForegroundColor Yellow
+            return $false
+        }
+
+        $previous = $rows
     }
 
     return $true

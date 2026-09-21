@@ -14,20 +14,22 @@ public static class StashLayout
     /// The smallest width worth calling a stash. Below this the grid stops being a
     /// stash and starts being a column.
     /// </summary>
-    public const int MinColumns = 2;
+    public const int MinColumns = StashFit.MinColumns;
 
     /// <summary>
-    /// A cell is 63px plus a 1px border (EFT.UI.DragAndDrop.ItemViewFactory.
-    /// GetCellPixelSize: <c>X * 63 + 1</c>), and the menu canvas at 3440x1440 is
-    /// 2580 logical units wide -- EFT scales it by min(w/1920, h/1080), so the
-    /// height alone sets the scale and an ultrawide simply gets more room.
+    /// A typo guard, and explicitly **not** the real limit.
     ///
-    /// 40 columns is 2521px and fits that canvas exactly; 41 is 2584px and does not.
-    /// So the cap is the real ceiling for the screen this was written for, rather
-    /// than a round number, and it exists so a typo in the config cannot produce a
-    /// grid the UI has no hope of drawing.
+    /// Until 0.6.0 this was 40, worked out from a 3440x1440 canvas of 2580 logical
+    /// units. That is the ceiling for one monitor: on the 1920-wide canvas every 16:9
+    /// screen gets -- 1080p, 1440p and 4K alike -- 40 columns is 2521px, some 601px
+    /// wider than the whole screen, so the cap protected precisely the people who
+    /// needed it least.
+    ///
+    /// The screen-aware ceiling now lives in <see cref="ColumnChoice"/>, which prefers
+    /// the probe's measurement and falls back to <see cref="StashFit.ConservativeColumns"/>.
+    /// What is left here is only a bound on absurdity.
     /// </summary>
-    public const int MaxColumns = 40;
+    public const int MaxColumns = StashFit.AbsoluteMaxColumns;
 
     /// <summary>
     /// The result of planning one stash. <see cref="Applied"/> is false when the
@@ -57,9 +59,15 @@ public static class StashLayout
     /// False to keep every row and simply gain columns.
     /// </param>
     /// <param name="deepestOccupiedRow">
-    /// One past the last row any profile has an item standing on, or 0 when nothing
-    /// is stored. Rows are never cut below this, because an item outside the grid is
-    /// an item the player has lost. See <see cref="StashOccupancy"/>.
+    /// One past the last row that must stay addressable, or 0 when nothing is stored.
+    /// Rows are never cut below this, because an item outside the grid is an item the
+    /// player has lost. See <see cref="StashOccupancy"/>.
+    ///
+    /// The caller must pass the **ladder-aware** floor from
+    /// <see cref="StashLadder.RowFloors"/>, not just the depth of the profiles sitting
+    /// on this template. A Standard-edition player moves up through these templates as
+    /// they upgrade the hideout's Stash area, so a rung planned shorter than the rung
+    /// below it strands their items the moment they upgrade.
     /// </param>
     public static Plan For(
         int vanillaColumns,

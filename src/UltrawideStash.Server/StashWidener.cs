@@ -53,19 +53,6 @@ public class StashWidener(
     SaveServer saveServer)
     : IOnLoad
 {
-    /// <summary>
-    /// The five stashes a player can own, by template id. All are <c>cellsH: 10</c> in
-    /// 4.1.5 and differ only in height; verified by <c>scripts/test-database.ps1</c>.
-    /// </summary>
-    private static readonly (string Id, string Edition)[] PlayerStashes =
-    [
-        ("566abbc34bdc2d92178b4576", "Standard"),
-        ("5811ce572459770cba1a34ea", "Left Behind"),
-        ("5811ce662459770f6f490f32", "Prepare for Escape"),
-        ("5811ce772459770e9e5f9532", "Edge of Darkness"),
-        ("6602bcf19cc643f44a04274b", "The Unheard Edition"),
-    ];
-
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         var folder = ModFolder();
@@ -73,6 +60,20 @@ public class StashWidener(
         var settings = StashSettings.Load(
             System.IO.Path.Combine(folder, "ultrawidestash.config.json"),
             out var note);
+
+        // What the client last measured of its own stash panel. Absent on a first run,
+        // on a dedicated server and whenever the probe is not installed -- all of which
+        // fall back to the conservative estimate from the declared screen size.
+        var measurement = Measurement.Read(
+            System.IO.Path.Combine(folder, Measurement.FileName),
+            out var measurementNote);
+
+        var choice = ColumnChoice.For(
+            settings.Columns,
+            measurement,
+            settings.ScreenWidth,
+            settings.ScreenHeight,
+            settings.IgnoreMeasurement);
 
         WriteUninstallNote(folder);
 
@@ -87,10 +88,15 @@ public class StashWidener(
             return Task.CompletedTask;
         }
 
+        // The row floor for each rung of the hideout's stash ladder. A Standard player
+        // climbs these templates as they upgrade the Stash area, so a rung must never
+        // be planned shorter than the rung below it -- see StashLadder.
+        var floors = StashLadder.RowFloors(DeepestByTemplate(profiles));
+
         var applied = 0;
         var moved = 0;
 
-        foreach (var (id, edition) in PlayerStashes)
+        foreach (var (id, edition) in StashLadder.Rungs)
         {
             if (!templates.Items.TryGetValue(new MongoId(id), out var template)) continue;
 
@@ -106,8 +112,8 @@ public class StashWidener(
             var mine = profiles.Where(p => p.StashTemplateId == id).ToList();
 
             var plan = StashLayout.For(
-                vanillaColumns, vanillaRows, settings.Columns, settings.CompensateRows,
-                DeepestRow(mine));
+                vanillaColumns, vanillaRows, choice.Columns, settings.CompensateRows,
+                floors.TryGetValue(id, out var floor) ? floor : DeepestRow(mine));
 
             // Whether or not the template changes, the profile may hold items from a
             // previous configuration, so the repack is driven by the FINAL size.
@@ -145,9 +151,40 @@ public class StashWidener(
         var shape = settings.CompensateRows ? "capacity held" : "rows kept";
 
         logger.Info(
-            $"[UltrawideStash] {applied} stash template(s) at {settings.Columns} columns, {shape}"
+            $"[UltrawideStash] {applied} stash template(s) at {choice.Columns} columns "
+            + $"({choice.PixelWidth}px), {shape}"
             + (moved > 0 ? $"; {moved} item(s) relocated to stay reachable" : string.Empty)
-            + $". ({note}.)");
+            + $". ({note}; {measurementNote}.)");
+
+        // Always say how the width was arrived at. The failure this guards against is
+        // silent -- a grid too wide for the panel is clipped, not resized -- so the
+        // reasoning has to be in the log whether or not anything looks wrong.
+        logger.Info($"[UltrawideStash] Width: {choice.Reason}.");
+
+        if (choice.Source == ColumnChoice.Origin.Clamped)
+        {
+            logger.Warning(
+                "[UltrawideStash] The configured width was reduced. Nothing is lost and nothing "
+                + "is stranded -- the stash is simply narrower than asked for."
+                + (moved > 0
+                    ? $" The {moved} item(s) relocated above were sitting in columns that the "
+                      + "narrower stash does not have, and they have been packed back inside it."
+                    : string.Empty));
+        }
+
+        // Explain a do-nothing run, but only when it really did nothing. A run that
+        // clamped an over-wide config back to vanilla also changes no template, and
+        // saying "no change was made" there would contradict the relocation count.
+        if (applied == 0 && moved == 0 && choice.IsNoOp)
+        {
+            logger.Info(
+                "[UltrawideStash] No change was made, and on a 16:9 screen that is the correct "
+                + "default: EFT scales its menu by min(width/1920, height/1080), so 1080p, 1440p "
+                + "and 4K all get a canvas exactly 1920 units wide and have no spare room to "
+                + "widen into. Only a wider-than-16:9 screen gains any. Install the probe, open "
+                + "your stash once and restart the server -- if the panel does have slack of its "
+                + "own, the measurement will find it and auto will use it.");
+        }
 
         if (applied > 0)
         {
@@ -258,8 +295,43 @@ public class StashWidener(
     }
 
     /// <summary>
-    /// How many rows the deepest stored item needs across these profiles. Row
-    /// compensation is clamped to this, so the ordinary case needs no relocation at all.
+    /// The deepest occupied row on each stash template, keyed by template id.
+    ///
+    /// Feeds <see cref="StashLadder.RowFloors"/>, which turns it into the running
+    /// maximum up the hideout upgrade ladder. Templates nobody is on are simply
+    /// absent, which the ladder reads as a depth of zero.
+    /// </summary>
+    private static Dictionary<string, int> DeepestByTemplate(
+        List<ProfileStore.StashContents> profiles)
+    {
+        var deepest = new Dictionary<string, int>();
+
+        foreach (var profile in profiles)
+        {
+            if (string.IsNullOrEmpty(profile.StashTemplateId)) continue;
+
+            var needed = 0;
+
+            foreach (var item in profile.Items)
+            {
+                var bottom = item.Y + item.EffectiveHeight;
+
+                if (bottom > needed) needed = bottom;
+            }
+
+            if (!deepest.TryGetValue(profile.StashTemplateId, out var already) || needed > already)
+            {
+                deepest[profile.StashTemplateId] = needed;
+            }
+        }
+
+        return deepest;
+    }
+
+    /// <summary>
+    /// How many rows the deepest stored item needs across these profiles. Only a
+    /// fallback now -- <see cref="StashLadder.RowFloors"/> is what the loop uses --
+    /// kept for the case where a template is somehow not on the ladder.
     /// </summary>
     private static int DeepestRow(List<ProfileStore.StashContents> profiles)
     {
@@ -373,11 +445,14 @@ public class StashWidener(
             "Instead:",
             "",
             "  1. Open ultrawidestash.config.json (in this folder) and set:  \"columns\": 10",
+            "     Use the number 10, NOT \"auto\" -- auto means \"as wide as this screen",
+            "     allows\", which is the opposite of what an uninstall needs.",
             "  2. Start the SPT server once and wait for it to finish loading.",
             "     The log will say how many items it moved back into the stash.",
             "  3. Stop the server, then delete:",
             "       - this folder",
             "       - BepInEx/plugins/UltrawideStash.Probe.dll",
+            "       - ultrawidestash.measured.json, if it is still here",
             "",
             "That is all. After step 2 the mod is not changing anything, so removing it",
             "changes nothing either.",
