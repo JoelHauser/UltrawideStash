@@ -5,8 +5,8 @@
 .DESCRIPTION
     The mod is two assemblies that install to two different places:
 
-      user/mods/UltrawideStash/UltrawideStash.Server.dll   the width itself
-      BepInEx/plugins/UltrawideStash.Probe.dll             the measurement
+      SPT_Runtime/user/mods/UltrawideStash/UltrawideStash.Server.dll   the width
+      BepInEx/plugins/UltrawideStash.Probe.dll                         the measurement
 
     Refuses to pack if the csproj Version and the version baked into the source
     disagree, because a zip whose name does not match the DLL it contains is the
@@ -139,7 +139,10 @@ $dist = Join-Path $root "dist\$version"
 
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 
-$serverOut = Join-Path $dist 'user\mods\UltrawideStash'
+# SPT 4.x keeps server mods under SPT_Runtime\user\mods, NOT a root-level user\.
+# The zip is unpacked over the SPT root, so it has to carry that full path or the
+# mod lands somewhere the server never looks and fails silently.
+$serverOut = Join-Path $dist 'SPT_Runtime\user\mods\UltrawideStash'
 $pluginOut = Join-Path $dist 'BepInEx\plugins'
 
 New-Item -ItemType Directory -Force -Path $serverOut | Out-Null
@@ -147,6 +150,26 @@ New-Item -ItemType Directory -Force -Path $pluginOut | Out-Null
 
 Copy-Item (Join-Path $root 'src\UltrawideStash.Server\bin\Release\net10.0\UltrawideStash.Server.dll') $serverOut
 Copy-Item $probeDll $pluginOut
+
+# The zip is unpacked over the SPT root, so every staged path must be one the game or
+# server actually reads. Getting this wrong fails silently, which is the worst way.
+$expected = @(
+    'SPT_Runtime\user\mods\UltrawideStash\UltrawideStash.Server.dll',
+    'BepInEx\plugins\UltrawideStash.Probe.dll'
+)
+
+$staged = Get-ChildItem $dist -Recurse -File | ForEach-Object {
+    $_.FullName.Substring($dist.Length + 1)
+}
+
+foreach ($want in $expected) {
+    if ($staged -notcontains $want) {
+        Write-Host ''
+        Write-Host "Staging is wrong: expected '$want' and it is not there." -ForegroundColor Red
+        Write-Host "Staged: $($staged -join ', ')"
+        exit 1
+    }
+}
 
 Write-Host ''
 Write-Host "Staged to dist\$version" -ForegroundColor Green

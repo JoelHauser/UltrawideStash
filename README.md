@@ -59,7 +59,7 @@ is for.
 
 | | Installs to | Does |
 | --- | --- | --- |
-| `UltrawideStash.Server.dll` | `user/mods/UltrawideStash/` | Sets the stash width |
+| `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width |
 | `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Measures the stash panel and logs it. Changes nothing |
 
 They are independent. The probe is useful on a vanilla 10-wide stash too â€” it still
@@ -71,7 +71,13 @@ reports how much room there is.
 scripts\pack.ps1 -SPTPath <your SPT root> -Install
 ```
 
-Or unzip `releases\UltrawideStash_V<version>.zip` over the SPT root.
+Or unzip `releases\UltrawideStash_V<version>.zip` over the SPT root — the archive
+carries the full paths, including `SPT_Runtime\user\mods\`.
+
+After a manual install, check the server DLL really landed at
+`<SPT>\SPT_Runtime\user\mods\UltrawideStash\UltrawideStash.Server.dll`.
+A server mod in the wrong folder is not loaded and **says nothing about it** — the stash
+simply stays 10 wide.
 
 > **Back up `SPT_Runtime\user\profiles` first.** Items you place past column 10 are
 > outside the grid if you ever remove this mod. That is inherent to changing a grid's
@@ -79,8 +85,8 @@ Or unzip `releases\UltrawideStash_V<version>.zip` over the SPT root.
 
 ## Configure
 
-`user/mods/UltrawideStash/ultrawidestash.config.json`, written with defaults on first
-run:
+`SPT_Runtime/user/mods/UltrawideStash/ultrawidestash.config.json`, written with defaults
+on first run:
 
 ```json
 {
@@ -214,7 +220,7 @@ The safe order is:
 2. Check the probe's **`out-of-bounds items: none`** line after a restart. That is the
    game's own `Grid.OutOfBoundsItems`, so it is the authoritative answer rather than a
    guess.
-3. Then delete `user/mods/UltrawideStash/` and
+3. Then delete `SPT_Runtime/user/mods/UltrawideStash/` and
    `BepInEx/plugins/UltrawideStash.Probe.dll`.
 
 If you skip step 1, restore the profile backup you took at install. This is inherent to

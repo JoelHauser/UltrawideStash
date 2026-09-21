@@ -245,6 +245,15 @@ game and guessing at it.
   than 2580; 40 columns fits a 3440x1440 canvas exactly and 41 does not. The test
   asserting the claim failed, which is the only reason it was found. Write the assertion
   even when the claim feels obvious.
+- **SPT 4.x server mods live under `SPT_Runtime\user\mods\`, not a root-level `user\`.**
+  There is no `<SPT>\user\` at all. 0.2.0's zip staged the server DLL at `user\mods\`,
+  so unzipping over the SPT root would have created a dead folder and the mod would
+  never have loaded -- **silently**, because a server mod in the wrong place is simply
+  not found. `pack.ps1 -Install` had the path right all along, so the two install routes
+  disagreed and only the zip was wrong. `pack.ps1` now asserts the staged layout against
+  an explicit expected list before it zips. The sibling LoadingRaid notes already
+  recorded this trap for profiles (`SPT_Runtime\user\`, not `C:\HUH\user\`); it is the
+  same trap and it was walked into anyway.
 - **`ConvertFrom-Json` cannot read the big SPT tables** (keys differing only by case,
   case-insensitive parser). `test-database.ps1` walks lines instead, which is also far
   quicker on 18 MB. Inherited from the LoadingRaid notes and still true.
