@@ -1,11 +1,11 @@
-# UltrawideStash -- working notes for Claude
+﻿# UltrawideStash -- working notes for Claude
 
 Makes the EFT stash wider than 10 columns so it fills the horizontal room an ultrawide
 has. Two halves: an SPT server mod that changes the stash item template, and a
 **read-only** BepInEx probe that measures the stash panel and logs what it finds.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 43 logic tests and 16 database checks
+assembly and SPT's database by static analysis. 49 logic tests and 16 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -296,7 +296,7 @@ grid's own width -- see the Compatibility section for the evidence. Two changes 
 of that read: compensation rounds **up** rather than down, so sorting can never fail for
 want of the cells flooring threw away; and the probe now reports the `Grid.Layout`
 invariant ASS asserts, plus a census of which companion plugins are loaded. Built clean,
-43 logic tests and 16 database checks pass.
+49 logic tests and 16 database checks pass.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log

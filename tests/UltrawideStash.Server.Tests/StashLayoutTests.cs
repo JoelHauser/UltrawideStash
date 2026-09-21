@@ -170,6 +170,53 @@ public class StashLayoutTests
     }
 
     /// <summary>
+    /// Every row is full width. There is never a short row at the bottom.
+    ///
+    /// The worry is a fair one, because compensation divides capacity by the column
+    /// count and 680/16 is 42.5 -- which looks like it ought to leave half a row. It
+    /// does not, for two independent reasons:
+    ///
+    /// 1. The grid is a rectangle by construction. A stash template carries exactly
+    ///    two integers, cellsH and cellsV, so a ragged row is not representable; and
+    ///    EFT indexes the grid as a flat List&lt;bool&gt; of GridWidth * GridHeight,
+    ///    addressed y * GridWidth + x (Grid.FillSpaceBuffer).
+    /// 2. This rounds the row count UP to a whole row, so the remainder becomes extra
+    ///    full-width cells rather than a stub.
+    ///
+    /// So capacity is always an exact multiple of the column count.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RealStashes))]
+    public void EveryRowIsFullWidth(int columns, int rows, string edition)
+    {
+        for (var target = 11; target <= StashLayout.MaxColumns; target++)
+        {
+            var plan = StashLayout.For(columns, rows, target, compensateRows: true, deepestOccupiedRow: 0);
+
+            Assert.True(plan.Applied, edition);
+
+            Assert.Equal(0, plan.Capacity % plan.Columns);
+
+            Assert.Equal(plan.Columns * plan.Rows, plan.Capacity);
+
+            Assert.True(plan.Rows >= 1, $"{edition} at {target} columns got {plan.Rows} rows");
+        }
+    }
+
+    /// <summary>
+    /// The same holds when the occupancy guard forces more rows than the capacity
+    /// maths wanted -- a clamped row count is still a whole row.
+    /// </summary>
+    [Fact]
+    public void AClampedRowCountIsStillAWholeRow()
+    {
+        var plan = StashLayout.For(10, 68, 16, compensateRows: true, deepestOccupiedRow: 61);
+
+        Assert.Equal(0, plan.Capacity % plan.Columns);
+        Assert.Equal(16 * 61, plan.Capacity);
+    }
+
+    /// <summary>
     /// Where the 40-column cap comes from, and it is not a round number.
     ///
     /// EFT scales the menu canvas by min(width/1920, height/1080)
