@@ -5,7 +5,9 @@ space an ultrawide monitor has and a 16:9 one does not.
 
 **Nothing in this repo has ever run in the game.** Everything below was read out of the
 game assembly and SPT's database by static analysis. The logic is tested; the result on
-screen is not. Version 0.2.0 is a first cut plus a measuring tool, not a finished mod.
+screen is not. Version 0.2.0 is a first cut plus a measuring tool, not a finished mod:
+it makes the stash wider and tells you whether the UI can draw it. It does not yet fix
+the UI if the answer is no.
 
 ---
 
@@ -165,6 +167,12 @@ So `compensateRows` rounds **up**: the grid is never smaller than vanilla. It ov
 by less than one row — 688 cells against 680 on an Edge of Darkness stash at 16 columns,
 about 1%. Two tests hold both ends of that.
 
+### Stash Management Helper — listed, not audited
+
+The probe names it (`com.markosz.stashmanagementhelper`) if it is loaded, because knowing
+it is there makes a report easier to read. **Its code was not reviewed** — only its GUID
+was looked up. It is in the census for completeness, not because it has been cleared.
+
 ### Other server mods that change stash size
 
 This reads whatever is in the template when it runs and treats that as the baseline, so
@@ -173,6 +181,28 @@ expansion mod, load order decides which is the baseline, and `verbose: true` pri
 before and after for each stash so you can see what happened.
 
 It refuses to narrow a stash, so it can never undo another mod's widening.
+
+---
+
+## Uninstalling safely
+
+Removing the mod puts the stash back to 10 columns. Anything sitting in column 10 or
+beyond is then outside the grid, and the same applies to rows if you were running with
+`compensateRows: false` and a hideout bonus that later went away.
+
+The safe order is:
+
+1. **In game, move everything into the first 10 columns.** Auto-sort will not do this for
+   you — it packs into the grid it currently has, which is the wide one.
+2. Check the probe's **`out-of-bounds items: none`** line after a restart. That is the
+   game's own `Grid.OutOfBoundsItems`, so it is the authoritative answer rather than a
+   guess.
+3. Then delete `user/mods/UltrawideStash/` and
+   `BepInEx/plugins/UltrawideStash.Probe.dll`.
+
+If you skip step 1, restore the profile backup you took at install. This is inherent to
+changing a grid's size — any mod that does it has the same exit — but it is the one thing
+here that can cost you something.
 
 ---
 
@@ -194,7 +224,7 @@ You get one block per screen resolution per session, like:
 [UltrawideStash] grid layout: 688 cells, consistent with 16x43
 [UltrawideStash] companion plugins: UI Fixes 3.2.0, Advanced Stash Sorting 1.0.6 (14 plugins loaded in total)
 [UltrawideStash] ancestors, grid outward -- name | rect | anchors | components:
-[UltrawideStash]   [0] Grid | 1009.0x2647.0 | ax 0.00-0.00 fixed | GridView,LayoutElement
+[UltrawideStash]   [0] Grid | 1009.0x2710.0 | ax 0.00-0.00 fixed | GridView,LayoutElement
 [UltrawideStash]   [1] Content | ... | ax 0.00-1.00 STRETCH | VerticalLayoutGroup,ContentSizeFitter
 [UltrawideStash]   [2] Viewport | ... | ax 0.00-0.00 fixed | RectMask2D,Image
 [UltrawideStash]   ...
@@ -255,6 +285,13 @@ Untested, in rough order of risk:
   development machine is an unplayed stub.
 - **What the game does with a stash whose template changed between sessions.** Widening
   should be non-destructive; that is reasoning, not observation.
+- **The 0.2.0 diagnostics themselves.** The companion census reads BepInEx's
+  `Chainloader.PluginInfos`, and the layout line reads `Grid.Layout` — neither has run,
+  and the three GUIDs watched for have never been seen matching a live plugin.
+
+## Repository
+
+https://github.com/JoelHauser/UltrawideStash
 
 ## Licence
 
