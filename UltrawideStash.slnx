@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UltrawideStash.Server/UltrawideStash.Server.csproj" />
+    <Project Path="src/UltrawideStash.Probe/UltrawideStash.Probe.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UltrawideStash.Server.Tests/UltrawideStash.Server.Tests.csproj" />
+  </Folder>
+</Solution>
