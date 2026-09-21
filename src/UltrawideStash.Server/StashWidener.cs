@@ -111,9 +111,35 @@ public class StashWidener(
 
             var mine = profiles.Where(p => p.StashTemplateId == id).ToList();
 
+            var floor = floors.TryGetValue(id, out var f) ? f : DeepestRow(mine);
+
+            // How deep items sit *now* is not how deep they need to sit once the
+            // stash is wider.
+            //
+            // The floor is the deepest occupied row before anything has been moved,
+            // and passing it straight to the planner defeats the whole point of
+            // compensateRows: a 10x68 stash with something parked at row 64 plans as
+            // 19x64, which is 1216 cells against vanilla's 680. The player asked for
+            // a wider stash and got a near-doubled one.
+            //
+            // It was never the right question. StashRepack leaves items that already
+            // fit exactly where they are and moves only the ones that do not, so
+            // widening to 19 columns pulls those deep items up into the free space
+            // the extra width opened. What matters is the shallowest grid they can be
+            // repacked into, which is found by asking, not by assuming the worst.
+            var wanted = StashLayout.For(
+                vanillaColumns, vanillaRows, choice.Columns, settings.CompensateRows, 0);
+
+            var settledFloor = floor;
+
+            if (wanted.Applied && settings.CompensateRows)
+            {
+                settledFloor = ShallowestThatFits(mine, wanted.Columns, wanted.Rows, floor);
+            }
+
             var plan = StashLayout.For(
                 vanillaColumns, vanillaRows, choice.Columns, settings.CompensateRows,
-                floors.TryGetValue(id, out var floor) ? floor : DeepestRow(mine));
+                settledFloor);
 
             // Whether or not the template changes, the profile may hold items from a
             // previous configuration, so the repack is driven by the FINAL size.
@@ -333,6 +359,52 @@ public class StashWidener(
     /// fallback now -- <see cref="StashLadder.RowFloors"/> is what the loop uses --
     /// kept for the case where a template is somehow not on the ladder.
     /// </summary>
+    /// <summary>
+    /// The shallowest grid, from <paramref name="ideal"/> rows upward, that every
+    /// profile on this template can actually be repacked into.
+    ///
+    /// Returns <paramref name="ideal"/> when the compact grid holds everything, which
+    /// is the normal case: the cells do not go anywhere when a stash is reshaped, and
+    /// compensateRows keeps the count. It climbs only for a stash that genuinely
+    /// cannot be packed that tightly -- large items that will not tessellate, mostly
+    /// -- and stops at <paramref name="ceiling"/>, the pre-move depth, which always
+    /// fits because it is where the items already are.
+    /// </summary>
+    private static int ShallowestThatFits(
+        List<ProfileStore.StashContents> profiles,
+        int columns,
+        int ideal,
+        int ceiling)
+    {
+        if (ceiling <= ideal) return ideal;
+
+        for (var rows = ideal; rows < ceiling; rows++)
+        {
+            if (EverythingFits(profiles, columns, rows)) return rows;
+        }
+
+        return ceiling;
+    }
+
+    /// <summary>
+    /// Whether a repack into this grid leaves nothing homeless. A dry run: it plans
+    /// the moves and throws them away, writing nothing.
+    /// </summary>
+    private static bool EverythingFits(
+        List<ProfileStore.StashContents> profiles,
+        int columns,
+        int rows)
+    {
+        foreach (var profile in profiles)
+        {
+            var plan = StashRepack.For(profile.Items, columns, rows);
+
+            if (!plan.Complete || plan.Homeless.Count > 0) return false;
+        }
+
+        return true;
+    }
+
     private static int DeepestRow(List<ProfileStore.StashContents> profiles)
     {
         var deepest = 0;

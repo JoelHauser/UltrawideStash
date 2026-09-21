@@ -1,33 +1,33 @@
 # UltrawideStash -- working notes for Claude
 
 Makes the EFT stash wider than 10 columns so it fills the horizontal room an ultrawide
-has. Two halves: an SPT server mod that changes the stash item template, and a
-**read-only** BepInEx probe that measures the stash panel, logs what it finds, and
-writes the measurement where the server reads it.
+has. Three parts now: an SPT server mod that changes the stash item template, a BepInEx
+plugin that **widens the stash panel itself** so there is room to draw the wider grid,
+and the measurement the plugin writes for the server to read.
 
-**Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 144 logic tests and 19 database checks
-pass; that means the arithmetic is right, not that the stash looks right.
+**This has now run in the game.** On 2026-09-21 it went from never-launched to working
+end to end on a 3440x1440 machine: 19 columns, 36 rows, capacity held at vanilla, no
+scrollbar and no dead space. Notes below describing untested arithmetic are history;
+the section marked *Verified in game* is not.
 
-## The box this was built on
+## The box this was built on, and the box it runs on
 
-| | |
-| --- | --- |
-| SPT install | `C:\HUH` -- **never launched**, profile is a 0.4 KB `TEST` stub |
-| SPT version | 4.1.5 |
-| EFT client | `0.16.9.5.40743` |
-| BepInEx | 5.4.23.5, HarmonyLib 2.9.0 |
-| Server runtime | .NET 10, `SPTarkov.Server.Core` 4.1.2 |
+| | development | live |
+| --- | --- | --- |
+| SPT install | `C:\HUH` -- never launched | `H:\SPT4.1.X` |
+| Screen | n/a | 3440x1440, canvas 2580x1080 |
+| SPT version | 4.1.5 | 4.1.6 |
+| EFT client | `0.16.9.5.40743` | same |
+| Server runtime | .NET 10, `SPTarkov.Server.Core` 4.1.2 | same |
 
-The user plays on **3440x1440** on a different machine, where their SPT lives on `H:`.
-They said "H:\HUH" in the original request; there is no `H:` drive on the development
-box, and `C:\HUH` is the one that exists here. Do not assume paths carry between them.
+`C:\HUH` does not exist on the live machine and `H:` does not exist on the development
+one. Do not assume paths carry between them; pass `-SPTPath` explicitly.
 
 ```
-scripts\pack.ps1 -SPTPath C:\HUH            # build both halves, test, zip
-scripts\pack.ps1 -SPTPath C:\HUH -Install
-scripts\test-database.ps1 -SPTPath C:\HUH   # the five stash ids against real items.json
-scripts\repair-stash.ps1 -SPTPath C:\HUH    # standalone repair; -Apply to write
+scripts\pack.ps1 -SPTPath H:\SPT4.1.X            # build both halves, test, zip
+scripts\pack.ps1 -SPTPath H:\SPT4.1.X -Install
+scripts\test-database.ps1 -SPTPath H:\SPT4.1.X   # the five stash ids against real items.json
+scripts\repair-stash.ps1 -SPTPath H:\SPT4.1.X    # standalone repair; -Apply to write
 dotnet test tests\UltrawideStash.Server.Tests
 ```
 
@@ -641,3 +641,91 @@ stash, and that the next start logs `auto: N columns, from the probe's measureme
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log
 exists -- the anchoring is unknowable from here, and a guess costs a round trip.
+
+
+## Verified in game, 2026-09-21
+
+Everything here came off a live 3440x1440 install, not from the assembly.
+
+### The screen's real shape
+
+`Stash Panel` is a child of `Items Panel`, pinned right (`ax 1.00-1.00`) at a fixed
+680 px. **It is what clips the grid -- not the canvas.** Beside it is a single child,
+`LeftSide`, 1866 px and stretching, carrying a `HorizontalLayoutGroup` over two panels:
+`Left Panel` (character doll, whose `Gear Panel` is a fixed 494 px) and
+`Containers Panel` (rig, pockets, belt, backpack). The group splits its width evenly.
+
+At 16:9 `LeftSide` is ~1206 px and each panel gets ~600, which is the layout the game
+ships. On a 2580 px canvas it stretches to 1866 and each gets 930 -- the same contents
+with ~330 px of air. **That air is the empty space an ultrawide player sees, and it is
+inside those panels, not between them.**
+
+So widening is: narrow `LeftSide`, grow `Stash Panel` by *less* than LeftSide gave up
+(the difference is the gap), and let the layout group re-flow its children. Two
+RectTransforms. See `StashWiden`.
+
+### Four traps, each of which cost a release
+
+1. **The gap cannot be added to the panel.** LeftSide and Stash Panel are neighbours,
+   so growing one by exactly what the other loses leaves the 10 px between them at
+   10 px forever -- the "gap" just becomes dead space inside the panel. Grow by less
+   than you shrink.
+
+2. **Take only what turns into columns.** A grid is a whole number of 63 px cells. A
+   panel sized to the last available pixel ends in a strip too narrow for a column:
+   width taken off the gear side and spent on nothing, against the side whose special
+   slots sit at its edge.
+
+3. **Chrome cannot be measured during `Show`.** The nodes inside the panel are not laid
+   out yet; their rects hold whatever the prefab left. Three attempts read three
+   different nodes and got 600, 38 and 10 -- each looked like a node-selection bug and
+   none was. Chrome is a remembered number (`StashMeasure.Chrome`, default 48), learned
+   by `Build` off a properly laid-out screen and carried to the next `Show`.
+
+4. **The panel map is taken mid-flight.** `offsetMax` and `sizeDelta` apply at once;
+   `HorizontalLayoutGroup` does not move its children until the next layout rebuild. A
+   report built in the same frame shows a 1240 px parent holding two 930 px children,
+   one apparently overflowing into the stash. `SettleFrames` exists for this.
+
+### The CHECK line
+
+Every measurement block ends with the outcome measured directly off the screen:
+
+```
+CHECK: viewport 1202.0 px vs grid 1198.0 px -- fits, 4.0 px spare
+CHECK: viewport 1188.0 px vs grid 1198.0 px -- OVERFLOW by 10.0 px
+CHECK: viewport 1227.0 px vs grid 1135.0 px -- DEAD SPACE 92.0 px -- 1 unusable column(s)
+```
+
+Three fixes in a row were argued from panel arithmetic and three were wrong. This line
+answers the question instead of reasoning toward it. **Read it first.**
+
+### Order of operations
+
+The client caches the stash template when it loads the profile. **Server first, then
+game.** Restarting the server under a running game leaves the old grid in place and
+looks exactly like a mod that does not work -- one `CHECK` line reading `grid 631.0 px`
+ended a debug that had gone four rounds.
+
+### Row compensation had the wrong input
+
+`compensateRows` holds capacity by shortening the stash as it widens. It was handed the
+deepest *currently* occupied row as a hard floor, computed **before** the repack ran, so
+a 10x68 stash with something at row 64 planned as 19x64 -- 1216 cells against vanilla's
+680. `StashRepack` leaves items that fit and moves only those that do not, so widening
+pulls deep items up by itself. `ShallowestThatFits` now dry-runs the repack from the
+compact size upward and takes the first size that holds everything. Edge of Darkness:
+**10x68 -> 19x36, 684 cells.**
+
+### Known broken: non-ultrawide resolutions
+
+The server's column count is global, but the panel can only widen where there is slack.
+At a 1920 logical canvas `LeftSide` is ~1206 px against a 1240 px reserve, so nothing
+widens while the grid is still 19 wide:
+
+```
+screen 1920x1080 -- CHECK: viewport 632.0 px vs grid 1198.0 px -- OVERFLOW by 566.0 px
+```
+
+Self-healing on the next server start, because the probe rewrites the measurement for
+the new resolution -- but broken in between. **Not fixed.**

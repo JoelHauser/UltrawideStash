@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
@@ -35,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "0.6.0";
+        public const string PluginVersion = "0.8.6";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -52,9 +53,44 @@ namespace UltrawideStash.Probe
         /// </summary>
         private static MonoBehaviour _pending;
 
+        /// <summary>
+        /// Whether to take the slack out of the gear side and give it to the stash.
+        ///
+        /// Off by default. This is the one thing the plugin does that changes what is
+        /// on screen, and a mod that rearranges the inventory screen the first time it
+        /// loads, without being asked, is a mod people uninstall. Turning it off puts
+        /// the screen back on the next open.
+        /// </summary>
+        private ConfigEntry<bool> _widen;
+
+        /// <summary>
+        /// What each of the two gear panels keeps, in canvas px. See
+        /// <see cref="StashWiden.DefaultReservePerPanel"/> for why 620.
+        /// </summary>
+        private ConfigEntry<float> _reserve;
+
         private void Awake()
         {
             _log = Logger;
+
+            // No apostrophes in these keys. BepInEx writes them into an ini and the
+            // parser does not survive one.
+            _widen = Config.Bind(
+                "Layout",
+                "WidenStashPanel",
+                false,
+                "Narrow the gear side of the inventory screen and give the width to the "
+                + "stash panel. Off by default because it rearranges the screen.");
+
+            _reserve = Config.Bind(
+                "Layout",
+                "GearPanelReserve",
+                StashWiden.DefaultReservePerPanel,
+                "Canvas px each gear panel keeps when the stash is widened. The game's "
+                + "own 16:9 layout gives them about 600. Below 520 the character doll "
+                + "starts to clip.");
+
+            if (_widen.Value) StashMeasure.Widen = _reserve.Value;
 
             GameTypes.Resolve();
 
@@ -72,7 +108,11 @@ namespace UltrawideStash.Probe
                     postfix: new HarmonyMethod(
                         AccessTools.Method(typeof(ProbePlugin), nameof(AfterStashShow))));
 
-                Say("probe armed. Open your stash and this log gets one measurement block.");
+                Say(_widen.Value
+                    ? "armed. Open your stash: it gets one measurement block, and the panel "
+                      + "gets widened."
+                    : "probe armed (read-only). Open your stash and this log gets one "
+                      + "measurement block. Set WidenStashPanel to true to widen it.");
             }
             catch (Exception e)
             {
@@ -94,6 +134,11 @@ namespace UltrawideStash.Probe
         /// </summary>
         private static void AfterStashShow(MonoBehaviour __instance)
         {
+            // Resize here, in Show, so the panel is already its full width on the
+            // first frame the player sees. Deferring this to Update costs one frame
+            // at the vanilla width and the stash visibly snaps wider on every open.
+            StashMeasure.WidenNow(__instance, Say);
+
             _pending = __instance;
             _framesWaited = 0;
         }
@@ -148,3 +193,7 @@ namespace UltrawideStash.Probe
         }
     }
 }
+
+
+
+

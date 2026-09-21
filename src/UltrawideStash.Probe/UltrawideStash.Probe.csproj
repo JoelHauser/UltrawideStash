@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- net472 because that is what the game's mono runtime loads. -->
@@ -9,7 +9,7 @@
     <Nullable>disable</Nullable>
 
     <!-- Must match ProbePlugin.PluginVersion. Two places, and they have to agree. -->
-    <Version>0.6.0</Version>
+    <Version>0.8.6</Version>
 
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -62,3 +62,7 @@
   </ItemGroup>
 
 </Project>
+
+
+
+
