@@ -286,9 +286,25 @@ how many items it relocated — and from then on the mod is doing nothing, so re
 changes nothing. The recommendation is in the startup log too, so it is hard to miss.
 
 The one thing that start cannot do for you is happen after the fact. If you remove the
-DLLs without it, items in column 10 and beyond become unreachable. They are **not deleted** — the server never prunes, so they are still in the
-profile with their coordinates. Reinstall at the same `columns`, and they are all back
-exactly where they were; then do the uninstall properly.
+DLLs without it, items in column 10 and beyond become unreachable — **not deleted**, the
+server never prunes, so they are still in the profile with their coordinates.
+
+Two ways back, and neither loses anything:
+
+- **Reinstall** at the same `columns`, start the server, and everything is where you left
+  it. Then uninstall properly.
+- **Or run `scripts/repair-stash.ps1`**, which needs nothing but PowerShell — not the
+  mod, not a matching SPT version, not a build. It packs each stash back into vanilla
+  dimensions, overflows anything that will not fit into the Sorting Table, and reports
+  without writing unless you pass `-Apply`:
+
+  ```
+  scripts\repair-stash.ps1 -SPTPath C:\YourSPT            # report only
+  scripts\repair-stash.ps1 -SPTPath C:\YourSPT -Apply     # do it
+  ```
+
+  It takes a timestamped `.bak` beside every profile it touches. This is what makes the
+  hazard a nuisance rather than a trap: **the recovery outlives the mod.**
 
 ---
 
@@ -339,6 +355,7 @@ What to read from it:
 scripts\pack.ps1 -SPTPath C:\HUH            # build, test, zip
 scripts\pack.ps1 -SPTPath C:\HUH -Install   # and install
 scripts\test-database.ps1 -SPTPath C:\HUH   # stash ids against a real database
+scripts\repair-stash.ps1 -SPTPath C:\HUH    # standalone stash repair (report only)
 dotnet test tests\UltrawideStash.Server.Tests
 ```
 

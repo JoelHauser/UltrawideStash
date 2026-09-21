@@ -151,10 +151,15 @@ New-Item -ItemType Directory -Force -Path $pluginOut | Out-Null
 Copy-Item (Join-Path $root 'src\UltrawideStash.Server\bin\Release\net10.0\UltrawideStash.Server.dll') $serverOut
 Copy-Item $probeDll $pluginOut
 
+# The standalone repair script ships with the mod, because the moment it is needed is the
+# moment the mod folder has been deleted -- so it has to be findable in the zip too.
+Copy-Item (Join-Path $PSScriptRoot 'repair-stash.ps1') $serverOut
+
 # The zip is unpacked over the SPT root, so every staged path must be one the game or
 # server actually reads. Getting this wrong fails silently, which is the worst way.
 $expected = @(
     'SPT_Runtime\user\mods\UltrawideStash\UltrawideStash.Server.dll',
+    'SPT_Runtime\user\mods\UltrawideStash\repair-stash.ps1',
     'BepInEx\plugins\UltrawideStash.Probe.dll'
 )
 
@@ -206,6 +211,7 @@ if ($Install) {
 
     Copy-Item (Join-Path $serverOut 'UltrawideStash.Server.dll') $serverDest -Force
     Copy-Item (Join-Path $pluginOut 'UltrawideStash.Probe.dll') $pluginDest -Force
+    Copy-Item (Join-Path $serverOut 'repair-stash.ps1') $serverDest -Force
 
     # Never clobber a config the player has edited. The server writes a default one
     # on first run if it is absent.

@@ -26,6 +26,7 @@ box, and `C:\HUH` is the one that exists here. Do not assume paths carry between
 scripts\pack.ps1 -SPTPath C:\HUH            # build both halves, test, zip
 scripts\pack.ps1 -SPTPath C:\HUH -Install
 scripts\test-database.ps1 -SPTPath C:\HUH   # the five stash ids against real items.json
+scripts\repair-stash.ps1 -SPTPath C:\HUH    # standalone repair; -Apply to write
 dotnet test tests\UltrawideStash.Server.Tests
 ```
 
@@ -384,6 +385,25 @@ In rough order of risk:
    non-destructive. That is reasoning, not observation.
 6. **`Grid.OutOfBoundsItems`** is resolved optionally and reported. If it ever says
    anything but `none`, something has gone wrong and the report says to restore a backup.
+
+## The residual risk, and why it stops there
+
+Deleting the mod without first setting `columns` to 10 cannot be prevented -- after the
+DLLs are gone nothing of ours runs, and the game's own rescue does not fire (see above).
+That is a hard constraint, not a gap to close. What can be done is make it reversible and
+make the reversal outlive the mod:
+
+- Nothing is ever deleted. The SPT server has no out-of-bounds concept and never prunes.
+- Reinstalling at the same `columns` restores everything exactly.
+- **`scripts/repair-stash.ps1`** repacks a profile with nothing but PowerShell -- no mod,
+  no matching SPT version, no build. It mirrors `StashRepack` plus the Sorting Table
+  overflow, and reports unless given `-Apply`. Verified against a synthesised 16-wide
+  profile: 64 items, 24 stranded, all recovered, no overlaps, no BOM, backup taken.
+- `HOW-TO-UNINSTALL.txt` is rewritten into the mod folder on every start, which is where
+  somebody about to delete it is looking.
+
+It treats items as 1x1 because it has no database to size them from. That under-reports
+footprints, which only makes the packing more conservative -- never less.
 
 ## Publishing
 
