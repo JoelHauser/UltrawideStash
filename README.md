@@ -250,8 +250,12 @@ the new positions into the profile.
   stranded move.
 - It packs biggest-first into the first free space, so the result looks like something
   the game's own sort would have produced.
-- If something genuinely has nowhere to go, it **changes nothing at all** for that stash
-  and says so in the log. It will never apply a size that hides an item.
+- If the stash genuinely cannot hold everything, the excess goes to the **Sorting
+  Table**, which stretches downward without limit and which this mod never touches. So
+  "your stash is too full to go back to vanilla" is not a dead end.
+- Only if something fits neither — an item more than 7 cells wide, which is to say never
+  — does it **change nothing at all** for that stash and say so in the log. It will never
+  apply a size that hides an item.
 - Every profile it edits gets a timestamped `.bak` alongside it first, and the original
   is only replaced on the last step, so a failure part-way leaves the file untouched.
 
@@ -281,8 +285,8 @@ That single start packs everything back into a vanilla-shaped stash — the log 
 how many items it relocated — and from then on the mod is doing nothing, so removing it
 changes nothing. The recommendation is in the startup log too, so it is hard to miss.
 
-If you remove the DLLs without that step, items in column 10 and beyond become
-unreachable. They are **not deleted** — the server never prunes, so they are still in the
+The one thing that start cannot do for you is happen after the fact. If you remove the
+DLLs without it, items in column 10 and beyond become unreachable. They are **not deleted** — the server never prunes, so they are still in the
 profile with their coordinates. Reinstall at the same `columns`, and they are all back
 exactly where they were; then do the uninstall properly.
 
@@ -350,7 +354,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-68 logic tests and 16 database checks pass.
+75 logic tests and 16 database checks pass.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
 reading their code - see Compatibility - not by running them. None of the three is

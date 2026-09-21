@@ -5,7 +5,7 @@ has. Two halves: an SPT server mod that changes the stash item template, and a
 **read-only** BepInEx probe that measures the stash panel and logs what it finds.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 68 logic tests and 16 database checks
+assembly and SPT's database by static analysis. 75 logic tests and 16 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -161,8 +161,14 @@ Rules worth keeping:
   Missing this would make the uninstall path do nothing.
 - **Items that fit are never moved.** Reshuffling a stash someone arranged is its own
   kind of damage.
-- **All-or-nothing per stash.** Every profile is planned before any is written; one
-  item with nowhere to go aborts the whole stash, template change included.
+- **Overflow goes to the Sorting Table.** `StashRepack.IntoSortingTable` places what the
+  stash cannot hold at 7 columns (`SortingTableWindow.ShowGrid` -> `ClampSize(7, 7)`,
+  hardcoded), growing downward. Transfers re-parent the item (`parentId` to the sorting
+  table, `slotId` "hideout" -- the sorting table's grid is named "hideout" too). The mod
+  never touches the Sorting Table's template, so anything parked there survives removal.
+- **All-or-nothing per stash.** Every profile is planned before any is written; an item
+  that fits neither the stash nor the table aborts the whole stash, template change
+  included.
 - **Backup, temp file, then replace.** `ProfileStore.ApplyMoves` copies to a timestamped
   `.bak`, writes a `.tmp`, and only then overwrites.
 - Biggest-first placement, because singles placed first fragment the grid and a large
@@ -406,7 +412,7 @@ grid's own width -- see the Compatibility section for the evidence. Two changes 
 of that read: compensation rounds **up** rather than down, so sorting can never fail for
 want of the cells flooring threw away; and the probe now reports the `Grid.Layout`
 invariant ASS asserts, plus a census of which companion plugins are loaded. Built clean,
-68 logic tests and 16 database checks pass.
+75 logic tests and 16 database checks pass.
 
 **0.3.0**, item safety, prompted by the user asking what happens to a player's items on
 install, on update and on uninstall. Answering it properly found that 0.2.0's occupancy

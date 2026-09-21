@@ -12,9 +12,13 @@ namespace UltrawideStash.Server;
 ///
 /// EFT does try to rescue such items on its own, through
 /// <c>MainMenuShowOperation.MoveBrokenItemsToSortingTable</c>. That rescue cannot be
-/// relied on: the Sorting Table's template grid is <c>0 x 0</c>, a stash grid has no
-/// horizontal stretch, and <c>FindFreeSpaceInGrid</c> never grows a grid — so it usually
-/// logs "Cannot find free space on sorting table for a bad item" and gives up.
+/// relied on, and the reason is timing rather than capacity: the Sorting Table's grid is
+/// growable (its <c>cellsH: 0, cellsV: 0</c> become stretch flags in
+/// <c>GridSerializer.Deserialize</c>) but **unsized** until
+/// <c>SortingTableWindow.ShowGrid</c> clamps it to 7 wide — which happens when the player
+/// opens that window, after the main-menu rescue has already run. <c>GetFreeLocation</c>
+/// is a pure search and never grows anything, so at <c>0 x 0</c> it returns null and the
+/// item is skipped.
 ///
 /// So the mod does it instead, and does it before anything can see the bad state: the
 /// relocation is written to the profile on disk at <c>PostLoad</c>, which runs before
@@ -28,10 +32,10 @@ namespace UltrawideStash.Server;
 ///
 /// ## Nothing here is destructive
 ///
-/// The worst case is <see cref="Plan.Homeless"/> — items with nowhere to go, because the
-/// smaller grid genuinely cannot hold everything. Those are left exactly where they are
-/// and reported, and <see cref="Plan.Complete"/> is false. The caller then declines to
-/// shrink at all rather than proceeding and stranding them.
+/// <see cref="Plan.Homeless"/> lists items the smaller grid genuinely cannot hold. Those
+/// go to the Sorting Table through <see cref="IntoSortingTable"/>, which stretches
+/// vertically without bound and is somewhere the player will actually find them. Only if
+/// even that fails — an item wider than the table — does the caller decline to resize.
 /// </summary>
 public static class StashRepack
 {
@@ -138,6 +142,94 @@ public static class StashRepack
         }
 
         return new Plan(moves, homeless, homeless.Count == 0);
+    }
+
+    /// <summary>
+    /// How wide the Sorting Table is. <c>SortingTableWindow.ShowGrid</c> calls
+    /// <c>SortingTable.ClampSize(7, 7)</c> — a hardcoded 7 — and the grid's template
+    /// declares <c>cellsH: 0, cellsV: 0</c>, which <c>GridSerializer.Deserialize</c>
+    /// turns into stretch flags on both axes. So it is 7 across whenever it is shown,
+    /// and grows downward as far as it needs to.
+    /// </summary>
+    public const int SortingTableColumns = 7;
+
+    /// <summary>An item being moved out of the stash and into the Sorting Table.</summary>
+    public readonly record struct Transfer(string ItemId, int ToX, int ToY);
+
+    /// <summary>
+    /// Place items into the Sorting Table, which is the overflow when the stash itself
+    /// cannot hold them.
+    ///
+    /// ## Why this is worth having
+    ///
+    /// Without it, narrowing a stash that is nearly full has no safe outcome: the mod
+    /// refuses, and the player is told their stash is too full to uninstall. The Sorting
+    /// Table stretches vertically without bound, so it always has room — and it is
+    /// somewhere the player will actually find things, which is the whole point.
+    ///
+    /// The Sorting Table is not touched by this mod, so anything left there stays
+    /// reachable after the mod is removed.
+    /// </summary>
+    /// <param name="incoming">Items that did not fit the stash.</param>
+    /// <param name="alreadyThere">What the Sorting Table is already holding.</param>
+    /// <param name="tooWide">
+    /// Items wider than the table itself, which nothing can place. Empty in practice —
+    /// it takes an item more than 7 cells across — but reported rather than dropped.
+    /// </param>
+    public static List<Transfer> IntoSortingTable(
+        IReadOnlyList<Placement> incoming,
+        IReadOnlyList<Placement> alreadyThere,
+        out List<string> tooWide)
+    {
+        tooWide = [];
+
+        var transfers = new List<Transfer>();
+
+        if (incoming.Count == 0) return transfers;
+
+        // Deep enough for everything already present plus everything arriving, one cell
+        // per row in the worst case.
+        var rows = 1;
+
+        foreach (var item in alreadyThere) rows = Math.Max(rows, item.Y + item.EffectiveHeight);
+
+        foreach (var item in incoming) rows += item.EffectiveHeight;
+
+        var occupied = new bool[SortingTableColumns * rows];
+
+        foreach (var item in alreadyThere)
+        {
+            Fill(occupied, SortingTableColumns, item.X, item.Y,
+                item.EffectiveWidth, item.EffectiveHeight);
+        }
+
+        var ordered = incoming.OrderByDescending(i => i.EffectiveWidth * i.EffectiveHeight)
+            .ThenBy(i => i.ItemId, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var item in ordered)
+        {
+            if (item.EffectiveWidth > SortingTableColumns)
+            {
+                tooWide.Add(item.ItemId);
+                continue;
+            }
+
+            if (TryFind(occupied, SortingTableColumns, rows,
+                    item.EffectiveWidth, item.EffectiveHeight, out var x, out var y))
+            {
+                Fill(occupied, SortingTableColumns, x, y,
+                    item.EffectiveWidth, item.EffectiveHeight);
+                transfers.Add(new Transfer(item.ItemId, x, y));
+            }
+            else
+            {
+                // Cannot happen with the row budget above, but never drop silently.
+                tooWide.Add(item.ItemId);
+            }
+        }
+
+        return transfers;
     }
 
     /// <summary>

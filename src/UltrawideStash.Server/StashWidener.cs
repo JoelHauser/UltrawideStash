@@ -174,34 +174,74 @@ public class StashWidener(
     {
         // Plan every profile before writing any of them, so a stash that cannot be
         // packed stops the whole thing rather than leaving some files already edited.
-        var planned = new List<(ProfileStore.StashContents Profile, StashRepack.Plan Plan)>();
+        var planned = new List<(ProfileStore.StashContents Profile,
+            IReadOnlyList<StashRepack.Move> Moves,
+            IReadOnlyList<StashRepack.Transfer> Transfers)>();
 
         foreach (var profile in profiles)
         {
             var plan = StashRepack.For(profile.Items, columns, rows);
 
-            if (!plan.Complete)
+            var transfers = new List<StashRepack.Transfer>();
+
+            if (plan.Homeless.Count > 0)
             {
-                logger.Error(
-                    $"[UltrawideStash] {edition}: {plan.Homeless.Count} item(s) in "
-                    + $"'{System.IO.Path.GetFileName(profile.FilePath)}' have nowhere to go in "
-                    + $"{columns}x{rows}. Free some space, or raise columns, and start again.");
-                return false;
+                // The stash itself cannot hold everything. Rather than refusing and
+                // leaving the player stuck, overflow into the Sorting Table: it grows
+                // vertically without bound, this mod never touches it, and it is
+                // somewhere they will actually look.
+                if (string.IsNullOrEmpty(profile.SortingTableId))
+                {
+                    logger.Error(
+                        $"[UltrawideStash] {edition}: {plan.Homeless.Count} item(s) in "
+                        + $"'{System.IO.Path.GetFileName(profile.FilePath)}' do not fit "
+                        + $"{columns}x{rows} and that profile has no sorting table to put "
+                        + "them in. Free some space, or raise columns, and start again.");
+                    return false;
+                }
+
+                var byId = profile.Items.ToDictionary(i => i.ItemId);
+
+                var homeless = plan.Homeless
+                    .Where(byId.ContainsKey)
+                    .Select(id => byId[id])
+                    .ToList();
+
+                transfers = StashRepack.IntoSortingTable(
+                    homeless, profile.SortingTableItems, out var tooWide);
+
+                if (tooWide.Count > 0)
+                {
+                    logger.Error(
+                        $"[UltrawideStash] {edition}: {tooWide.Count} item(s) in "
+                        + $"'{System.IO.Path.GetFileName(profile.FilePath)}' fit neither "
+                        + $"{columns}x{rows} nor the sorting table. Nothing was changed.");
+                    return false;
+                }
             }
 
-            if (plan.Moves.Count > 0) planned.Add((profile, plan));
+            if (plan.Moves.Count > 0 || transfers.Count > 0)
+            {
+                planned.Add((profile, plan.Moves, transfers));
+            }
         }
 
-        foreach (var (profile, plan) in planned)
+        foreach (var (profile, moves, transfers) in planned)
         {
             try
             {
-                var written = ProfileStore.ApplyMoves(profile.FilePath, plan.Moves);
+                var written = ProfileStore.ApplyChanges(
+                    profile.FilePath, moves, profile.SortingTableId, transfers);
 
                 moved += written;
 
+                var where = transfers.Count > 0
+                    ? $"{moves.Count} back inside the {edition} stash and {transfers.Count} "
+                      + "into the sorting table"
+                    : $"{written} back inside the {edition} stash";
+
                 logger.Info(
-                    $"[UltrawideStash] Moved {written} item(s) back inside the {edition} stash in "
+                    $"[UltrawideStash] Moved {where} in "
                     + $"'{System.IO.Path.GetFileName(profile.FilePath)}' (a .bak was written "
                     + "alongside it).");
             }
