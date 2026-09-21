@@ -69,7 +69,18 @@ public class StashWidener(
 
         var settings = StashSettings.Load(configPath, out var note);
 
-        var deepest = DeepestOccupiedRowByStash();
+        // Read the profiles off disk rather than asking SaveServer: this runs at
+        // PostLoad (1,000,000) and SaveCallbacks -- which is what loads them -- sits at
+        // the default priority of int.MaxValue, so the server's own dictionary is still
+        // empty here. See ProfileScan for the whole story.
+        var scan = ProfileScan.Run(ProfileDirectory(), SizeOf);
+
+        if (!scan.Confident && settings.CompensateRows)
+        {
+            logger.Warning(
+                $"[UltrawideStash] Not shortening any stash: {scan.Note}. Columns still widen; "
+                + "rows are left alone because nothing here could confirm what is stored.");
+        }
 
         var applied = 0;
         var refused = 0;
@@ -95,7 +106,10 @@ public class StashWidener(
             var vanillaColumns = grid.Properties.CellsH ?? 0;
             var vanillaRows = grid.Properties.CellsV ?? 0;
 
-            deepest.TryGetValue(id, out var deepestRow);
+            // When the scan cannot vouch for what is stored, claim the stash is
+            // occupied to its very last row. StashLayout then clamps rows to vanilla
+            // and nothing is ever cut out from under an item.
+            var deepestRow = scan.Confident ? scan.DeepestFor(id) : (int)vanillaRows;
 
             var plan = StashLayout.For(
                 (int)vanillaColumns,
@@ -159,78 +173,34 @@ public class StashWidener(
     }
 
     /// <summary>
-    /// For each stash template id, how many rows the deepest stored item needs.
+    /// Where SPT keeps profiles, taken from the server itself where possible.
     ///
-    /// Walks every profile because the database is shared -- one template serves all
-    /// of them, so the tallest requirement across all profiles is the one that has to
-    /// be respected. A profile that cannot be read is reported rather than assumed
-    /// empty: assuming empty is the assumption that loses items.
+    /// <c>SaveServer</c> holds the path in a private <c>profileFilepath</c>; its
+    /// <c>RemoveProfile</c> spells the same thing as the literal <c>user/profiles/</c>,
+    /// relative to the server's working directory. The field is read first because it
+    /// is SPT's own answer, and the literal is the fallback if it is ever renamed.
     /// </summary>
-    private Dictionary<string, int> DeepestOccupiedRowByStash()
+    private string ProfileDirectory()
     {
-        var deepest = new Dictionary<string, int>();
-
         try
         {
-            foreach (var profile in saveServer.GetProfiles().Values)
+            var field = typeof(SaveServer).GetField(
+                "profileFilepath",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            if (field?.GetValue(saveServer) is string path && !string.IsNullOrWhiteSpace(path))
             {
-                var inventory = profile?.CharacterData?.PmcData?.Inventory;
-                var items = inventory?.Items;
-                var stashId = inventory?.Stash;
-
-                if (items is null || stashId is null) continue;
-
-                // Which template this profile's stash actually is -- editions differ,
-                // and only the one the player owns needs protecting from their items.
-                var stashTemplate = FindStashTemplate(items, stashId.Value);
-
-                if (stashTemplate is null) continue;
-
-                var needed = 0;
-
-                foreach (var item in items)
-                {
-                    if (item.ParentId != stashId.Value.ToString()) continue;
-                    if (item.Location is not ItemLocation location) continue;
-
-                    var size = SizeOf(item.Template);
-
-                    var placement = StashOccupancy.Place(
-                        (int)(location.Y ?? 0),
-                        size.Width,
-                        size.Height,
-                        (int)location.R);
-
-                    if (placement.RowsNeeded > needed) needed = placement.RowsNeeded;
-                }
-
-                if (!deepest.TryGetValue(stashTemplate, out var already) || needed > already)
-                {
-                    deepest[stashTemplate] = needed;
-                }
+                return System.IO.Path.IsPathRooted(path)
+                    ? path
+                    : System.IO.Path.Combine(AppContext.BaseDirectory, path);
             }
         }
-        catch (Exception e)
+        catch
         {
-            // Without occupancy data, row compensation is cutting on a guess. Say so
-            // loudly rather than quietly.
-            logger.Warning(
-                $"[UltrawideStash] Could not read profiles to check what is stored ({e.Message}). "
-                + "Row compensation may shorten a stash below stored items -- back up user/profiles.");
+            // Fall through to the literal.
         }
 
-        return deepest;
-    }
-
-    /// <summary>The template id of the item that IS this profile's stash.</summary>
-    private static string? FindStashTemplate(IEnumerable<Item> items, MongoId stashId)
-    {
-        foreach (var item in items)
-        {
-            if (item.Id == stashId) return item.Template.ToString();
-        }
-
-        return null;
+        return System.IO.Path.Combine(AppContext.BaseDirectory, "user", "profiles");
     }
 
     /// <summary>
@@ -238,9 +208,11 @@ public class StashWidener(
     /// One cell is the smallest an item can be, so this under-reports rather than
     /// inventing depth that is not there.
     /// </summary>
-    private (int Width, int Height) SizeOf(MongoId templateId)
+    private (int Width, int Height) SizeOf(string templateId)
     {
-        if (!templates.Items.TryGetValue(templateId, out var template)) return (1, 1);
+        if (string.IsNullOrEmpty(templateId)) return (1, 1);
+
+        if (!templates.Items.TryGetValue(new MongoId(templateId), out var template)) return (1, 1);
 
         var width = (int)(template.Properties?.Width ?? 1);
         var height = (int)(template.Properties?.Height ?? 1);

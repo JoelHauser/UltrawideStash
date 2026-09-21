@@ -1,11 +1,11 @@
-﻿# UltrawideStash -- working notes for Claude
+# UltrawideStash -- working notes for Claude
 
 Makes the EFT stash wider than 10 columns so it fills the horizontal room an ultrawide
 has. Two halves: an SPT server mod that changes the stash item template, and a
 **read-only** BepInEx probe that measures the stash panel and logs what it finds.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 49 logic tests and 16 database checks
+assembly and SPT's database by static analysis. 64 logic tests and 16 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -85,20 +85,65 @@ ancestor's rect, its horizontal anchors (`STRETCH` vs `fixed`) and its component
 names. The `fixed` ancestor nearest the canvas is what will clip a widened grid, and its
 components say what a fix has to change. **Read that log before writing any UI patch.**
 
-## Capacity, and the guard that makes it safe
+## Capacity, the guard, and the bug that guard had
 
-The user chose "wider and shorter, same capacity". That means shortening, and shortening
-a played stash strands everything below the new last row.
+The user chose "wider and shorter, same capacity". Shortening a played stash is the one
+thing here that can move a player's belongings, so it is guarded. **0.2.0's guard did not
+work at all**, and the way it failed is worth keeping.
 
-So `StashWidener.DeepestOccupiedRowByStash` walks every profile through
-`SaveServer.GetProfiles()`, finds the items whose `ParentId` is the stash, and computes
-`Y + height` -- **with rotation applied**, because `ItemRotation.Vertical = 1` swaps the
-template's width and height and getting that backwards under-reports depth, which is the
-direction that loses items. `StashLayout.For` then never returns fewer rows than that.
+### The load-order bug (fixed in 0.3.0)
 
-If honouring the items means capacity rises instead of staying flat, it rises. Losing an
-item is not an acceptable price for a tidy number, and there is a test that says so
-(`AFullStashRefusesToBeShortened`).
+0.2.0 asked `SaveServer.GetProfiles()` from its `IOnLoad` at `OnLoadOrder.PostLoad`. From
+the IL:
+
+- SPT orders `IOnLoad` with `Enumerable.OrderBy` on `Injectable.TypePriority` --
+  **ascending** (`DependencyInjectionHandler.InjectAll`).
+- The default `TypePriority` is **`int.MaxValue`** (2147483647), both as the ctor default
+  and as `DependencyInjectionExtensions.GetTypePriority`'s fallback.
+- `SaveCallbacks` -- whose `OnLoadAsync` calls `SaveServer.LoadAsync()` and is what fills
+  that dictionary -- carries a **bare `[Injectable]`**, so it sits at that default.
+- `OnLoadOrder.PostLoad` is **1,000,000**.
+
+One million sorts before two billion, so the mod ran first and the dictionary was empty.
+`deepestOccupiedRow` was always 0 and rows were always cut to the capacity target. On an
+Edge of Darkness profile at 16 columns that is 68 rows down to 43, with nothing stopping
+it. **A guard that reads an empty collection looks exactly like a guard that passed.**
+
+`ProfileScan` reads `user/profiles/*.json` off disk instead, which takes the ordering
+question off the table. It fails safe: anything it cannot parse returns `Confident = false`,
+and `StashWidener` then passes the **vanilla row count** as the occupancy floor, so
+`StashLayout` clamps rows to vanilla and nothing shortens.
+
+The profile path comes from `SaveServer`'s private `profileFilepath` where it can be
+reflected, falling back to `AppContext.BaseDirectory` + `user/profiles` -- the literal
+`SaveServer.RemoveProfile` itself uses.
+
+### What the game does with an item that does not fit
+
+Worth knowing before panicking about any of this, and it is the reason the failure above
+was survivable rather than catastrophic:
+
+- **The SPT server has no out-of-bounds concept.** It never prunes; the item stays in the
+  profile JSON with its stored coordinates.
+- **The client rescues them.** `MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs
+  on every main-menu load, collects each grid's `OverlappingItems` and `OutOfBoundsItems`,
+  calls `Grid.FindFreeSpace` on the **Sorting Table** and `ItemManipulator.Move`s them
+  there inside a `TryRunNetworkTransaction`, so the move persists.
+- The Sorting Table's grid is `cellsH: 0, cellsV: 0` with `isSortingTable: true` -- it
+  sizes itself, which is why it is the designated landing place.
+
+So the worst outcome is items relocated, not items deleted. Do not let that become an
+excuse for a loose guard, but do not describe it as data loss either.
+
+### The occupancy arithmetic
+
+`StashOccupancy.Place` computes `Y + height` **with rotation applied**, because
+`ItemRotation.Vertical = 1` swaps the template's width and height. Getting that backwards
+under-reports depth, which is the direction that loses items. `ProfileScan.Rotation` reads
+an unrecognised rotation value **as rotated** for the same reason.
+
+Only the stash's direct children count. An item inside a backpack has a `y` belonging to
+the backpack's grid, and reading it as a stash row invents depth that is not there.
 
 ## Compatibility, and how it was established
 
@@ -245,6 +290,15 @@ game and guessing at it.
   than 2580; 40 columns fits a 3440x1440 canvas exactly and 41 does not. The test
   asserting the claim failed, which is the only reason it was found. Write the assertion
   even when the claim feels obvious.
+- **A guard that reads an empty collection looks like a guard that passed.** 0.2.0's
+  occupancy guard called `SaveServer.GetProfiles()` before SPT had loaded any, got an
+  empty dictionary, and reported "nothing is stored" every time -- so it never once
+  stopped a row being cut. It had tests, and they passed, because they tested
+  `StashLayout` with a number the real caller could never produce. **Test the wiring
+  that produces the number, not just the function that consumes it.**
+- **Default `TypePriority` in SPT's DI is `int.MaxValue`, and ordering is ascending.**
+  So a bare `[Injectable]` runs *last*, and anything with an explicit `OnLoadOrder`
+  runs *before* it. `PostLoad` is not last; it is 1,000,000 out of 2,147,483,647.
 - **SPT 4.x server mods live under `SPT_Runtime\user\mods\`, not a root-level `user\`.**
   There is no `<SPT>\user\` at all. 0.2.0's zip staged the server DLL at `user\mods\`,
   so unzipping over the SPT root would have created a dead folder and the mod would
@@ -305,7 +359,13 @@ grid's own width -- see the Compatibility section for the evidence. Two changes 
 of that read: compensation rounds **up** rather than down, so sorting can never fail for
 want of the cells flooring threw away; and the probe now reports the `Grid.Layout`
 invariant ASS asserts, plus a census of which companion plugins are loaded. Built clean,
-49 logic tests and 16 database checks pass.
+64 logic tests and 16 database checks pass.
+
+**0.3.0**, item safety, prompted by the user asking what happens to a player's items on
+install, on update and on uninstall. Answering it properly found that 0.2.0's occupancy
+guard never worked -- see the load-order bug above -- and that the game rescues
+out-of-bounds items to the Sorting Table by itself, which is why that failure would have
+been survivable. `ProfileScan` replaces the guard and fails safe. 64 logic tests.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log
