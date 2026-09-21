@@ -312,17 +312,6 @@ Two ways back, and neither loses anything:
 
 ---
 
-## What it looks like
-
-An interactive simulation of the stash screen at ultrawide resolutions, driven by the
-real canvas maths and the real 63px cell, with a toggle for the two possible panel
-behaviours:
-
-**https://claude.ai/artifact/F1W8fdfyszuuhuGBUocwr1**
-
-It is a mockup, not a screenshot — the panel proportions and the font are guesses, and
-the page says which parts are which.
-
 ## The measurement procedure
 
 The probe answers the one question that decides whether a client-side UI fix is needed.
