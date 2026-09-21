@@ -120,20 +120,35 @@ reflected, falling back to `AppContext.BaseDirectory` + `user/profiles` -- the l
 
 ### What the game does with an item that does not fit
 
-Worth knowing before panicking about any of this, and it is the reason the failure above
-was survivable rather than catastrophic:
+Read carefully, because 0.3.0 first recorded this too optimistically and the correction
+matters more than the original claim.
 
-- **The SPT server has no out-of-bounds concept.** It never prunes; the item stays in the
-  profile JSON with its stored coordinates.
-- **The client rescues them.** `MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs
-  on every main-menu load, collects each grid's `OverlappingItems` and `OutOfBoundsItems`,
-  calls `Grid.FindFreeSpace` on the **Sorting Table** and `ItemManipulator.Move`s them
-  there inside a `TryRunNetworkTransaction`, so the move persists.
-- The Sorting Table's grid is `cellsH: 0, cellsV: 0` with `isSortingTable: true` -- it
-  sizes itself, which is why it is the designated landing place.
+**Nothing deletes it.** The SPT server has no out-of-bounds concept and never prunes; the
+item stays in the profile JSON with its stored coordinates. Restore a grid that covers it
+and it is back. This part is solid.
 
-So the worst outcome is items relocated, not items deleted. Do not let that become an
-excuse for a loose guard, but do not describe it as data loss either.
+**The rescue exists but will probably not fire.**
+`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs every main-menu load and does
+try: gather `OverlappingItems` + `OutOfBoundsItems`, `Grid.FindFreeSpace` on the Sorting
+Table, `ItemManipulator.Move`, `TryRunNetworkTransaction`. But:
+
+- The Sorting Table item (`602543c13fee350cd564d032`) has `cellsH: 0, cellsV: 0`,
+  `isSortingTable: true`.
+- `Stash.StashGrid..ctor` copies `CanStretchVertically` only -- there is **no horizontal
+  stretch on a stash grid at all** -- and `StashGrid.Expand` adds `delta * GridWidth`
+  cells, which is zero when the width is zero.
+- `Grid.FindFreeSpaceInGrid` searches the current `GridWidth`/`GridHeight` and never
+  grows the grid.
+- The only caller of `SortingTable.ClampSize` is `SortingTableWindow.ShowGrid` -- the UI,
+  opened by the player, long after the main-menu rescue ran.
+
+So expect `Cannot find free space on sorting table for a bad item` per item, and the items
+left out of bounds. The per-item failure path is `Debug.LogError` then `continue`; it
+never destroys anything.
+
+**Therefore the uninstall advice is not politeness, it is the actual recovery plan:** move
+everything into the first 10 columns before removing the mod, and if that is missed,
+reinstalling at the same `columns` brings it all back.
 
 ### The occupancy arithmetic
 
@@ -290,6 +305,13 @@ game and guessing at it.
   than 2580; 40 columns fits a 3440x1440 canvas exactly and 41 does not. The test
   asserting the claim failed, which is the only reason it was found. Write the assertion
   even when the claim feels obvious.
+- **A method named for what it intends is not evidence it succeeds.**
+  `MoveBrokenItemsToSortingTable` was read as proof that stranded items get rescued,
+  and that went into the README and into an answer to the user. Reading the rest of
+  it -- the Sorting Table's 0-wide template, stash grids having no horizontal stretch,
+  `FindFreeSpaceInGrid` not growing anything -- says it will usually log an error and
+  skip. Follow the call through to whether its precondition can actually hold before
+  quoting it as a guarantee, especially when someone is about to rely on it.
 - **A guard that reads an empty collection looks like a guard that passed.** 0.2.0's
   occupancy guard called `SaveServer.GetProfiles()` before SPT had loaded any, got an
   empty dictionary, and reported "nothing is stored" every time -- so it never once

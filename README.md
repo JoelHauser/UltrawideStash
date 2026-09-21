@@ -212,18 +212,32 @@ It refuses to narrow a stash, so it can never undo another mod's widening.
 The short version: **nothing this mod does deletes an item, and the game has its own
 recovery for the one bad case.**
 
-### The game rescues stranded items by itself
+### Nothing is deleted, but do not count on the rescue
 
-`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs on **every main-menu load**.
-It collects each grid's `OverlappingItems` and `OutOfBoundsItems`, finds space in the
-**Sorting Table**, and `ItemManipulator.Move`s them there inside a network transaction so
-the move is saved. The Sorting Table's own grid is declared `0 x 0` with
-`isSortingTable: true` — it sizes itself, which is why the game picked it as the landing
-place.
+Two separate facts, and only the first is solid.
 
-The SPT server has no out-of-bounds concept at all and never prunes: an item that does not
-fit stays in the profile JSON with its stored coordinates. So the worst realistic outcome
-is **items moved somewhere you did not put them**, not items gone.
+**Nothing deletes an out-of-bounds item.** The SPT server has no out-of-bounds concept at
+all and never prunes — an item that does not fit stays in the profile JSON with its stored
+coordinates, exactly where you left it. Put the stash back to a size that covers it and it
+is simply there again.
+
+**The game tries to rescue them, and will probably fail.**
+`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs on every main-menu load: it
+collects each grid's `OverlappingItems` and `OutOfBoundsItems`, calls
+`Grid.FindFreeSpace` on the **Sorting Table**, and moves them there through a network
+transaction. That is real. What makes it unreliable is the Sorting Table itself:
+
+- Its template grid is literally `cellsH: 0, cellsV: 0`.
+- `Stash.StashGrid` stretches **vertically only**, and its `Expand` grows the layout by
+  `rows * GridWidth` cells — which is zero cells when the width is zero.
+- `Grid.FindFreeSpaceInGrid` searches the grid's *current* dimensions and never grows it.
+- The only thing that sizes the Sorting Table is `SortingTableWindow.ShowGrid` calling
+  `SortingTable.ClampSize`, i.e. when you open that window — which is after the
+  main-menu rescue has already run.
+
+So the likely outcome is one `Cannot find free space on sorting table for a bad item`
+error per item in the log, and the items left out of bounds. Out of bounds means
+**invisible, not gone**: the failure path logs and skips, it never destroys anything.
 
 ### Installing, and updating
 
@@ -247,14 +261,18 @@ This is the one case with a real consequence, and it is inherent to changing a g
 rather than something this mod does badly.
 
 Remove the mod and the template goes back to 10 wide. Anything in column 10 or beyond is
-then out of bounds — and at your next main menu the game moves it to the Sorting Table.
-Nothing is lost, but a wide stash's worth of items landing in the Sorting Table at once is
-a mess to sort out.
+then out of bounds. It is **not deleted** — it stays in the profile — but you will not be
+able to see or reach it, and per the section above the Sorting Table rescue probably will
+not collect it either.
 
-To avoid it entirely: **move everything into the first 10 columns before you uninstall**,
-and check the probe's `out-of-bounds items: none` line. Auto-sort will not do this for you
-— it packs into the grid it currently has, which is the wide one. Reinstalling the mod also
-brings them back within bounds.
+**So move everything into the first 10 columns before you uninstall.** Auto-sort will not
+do this for you: it packs into the grid it currently has, which is the wide one. Check the
+probe's `out-of-bounds items: none` line afterwards — that reads the game's own
+`Grid.OutOfBoundsItems`, so it is the authoritative answer rather than a guess.
+
+If you have already uninstalled and things are missing, do not panic and do not start a
+new profile: reinstall the mod at the same `columns`, and everything reappears where it
+was. That is the recovery path, and it works because nothing was ever removed.
 
 ---
 
