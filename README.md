@@ -212,17 +212,36 @@ It refuses to narrow a stash, so it can never undo another mod's widening.
 The short version: **nothing this mod does deletes an item, and the game has its own
 recovery for the one bad case.**
 
+### Why the game's own rescue does not save you
+
+EFT does have a recovery for items that fall outside a grid, and it is reasonable to
+expect it to handle this. It will not, and the reason is timing rather than capacity.
+
+`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs on every main-menu load. It
+gathers each grid's `OverlappingItems` and `OutOfBoundsItems`, calls `Grid.FindFreeSpace`
+on the **Sorting Table**, and moves what it can there.
+
+The Sorting Table's template declares its grid as `cellsH: 0, cellsV: 0`, and
+`GridSerializer.Deserialize` turns those zeroes into **stretch flags** — a zero dimension
+means "growable". So the grid is not incapable; it is simply **unsized until something
+sizes it**, and the only thing that does is `SortingTableWindow.ShowGrid` calling
+`SortingTable.ClampSize` — that is, you opening the Sorting Table window.
+
+The rescue runs before that. And it does not size the grid itself:
+`FindFreeSpace` → `FindFreeSpaceInGrid` → `GetFreeLocation` is a pure search over the
+current dimensions, which are still `0 x 0`. Both loops have nothing to iterate, it
+returns null, and the item is skipped with
+`Cannot find free space on sorting table for a bad item`.
+
+So on the launch where you would need it — the first one after removing the mod — it does
+nothing. It might work on some later main-menu load in a session where you happened to
+open the Sorting Table first. That is not something to plan around.
+
 ### The mod keeps your items reachable itself
 
-Resizing a grid can leave items outside it, and an item outside the grid is invisible —
-not deleted, but unreachable, which is what it feels like. EFT has its own rescue for
-this and **it does not work**: `MoveBrokenItemsToSortingTable` tries to move such items
-to the Sorting Table, whose template grid is `0 x 0`; a stash grid has no horizontal
-stretch and `FindFreeSpaceInGrid` never grows one, so it logs
-`Cannot find free space on sorting table for a bad item` and gives up.
-
-So this mod does not rely on it. **On every server start it relocates any item that does
-not fit the stash it is about to produce**, writing the new positions into the profile.
+Because of the above, this mod does not depend on the game's rescue. **On every server
+start it relocates any item that does not fit the stash it is about to produce**, writing
+the new positions into the profile.
 
 - It runs against the grid's **final** dimensions, whether or not this start changed
   them. That matters because the profile can hold items from a previous, wider

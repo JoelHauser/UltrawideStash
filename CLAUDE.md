@@ -118,25 +118,31 @@ The profile path comes from `SaveServer`'s private `profileFilepath` where it ca
 reflected, falling back to `AppContext.BaseDirectory` + `user/profiles` -- the literal
 `SaveServer.RemoveProfile` itself uses.
 
-### The mod relocates rather than trusting the game's rescue
+### Why the game's rescue does not fire (settled, third attempt)
 
-**Do not reinstate any wording that says EFT rescues out-of-bounds items.** It tries and
-it fails, and 0.3.0 shipped that claim twice before it was checked properly:
+This was got wrong twice. 0.3.0 said the rescue works. The first correction said the
+Sorting Table "has a 0x0 grid" as though it were incapable. Both were sloppy; the real
+answer is **timing**, and it is now traced end to end:
 
 - `MainMenuShowOperation.MoveBrokenItemsToSortingTable` gathers `OverlappingItems` +
-  `OutOfBoundsItems`, calls `Grid.FindFreeSpace` on the Sorting Table, then
-  `ItemManipulator.Move` + `TryRunNetworkTransaction`.
-- The Sorting Table item (`602543c13fee350cd564d032`) is `cellsH: 0, cellsV: 0`.
-- `Stash.StashGrid..ctor` copies `CanStretchVertically` only -- a stash grid has **no**
-  horizontal stretch -- and `StashGrid.Expand` adds `delta * GridWidth` cells, which is
-  zero at zero width.
-- `Grid.FindFreeSpaceInGrid` searches current dimensions and never grows the grid.
-- The only caller of `SortingTable.ClampSize` is `SortingTableWindow.ShowGrid`, i.e. the
-  player opening that window, long after the main-menu rescue ran.
+  `OutOfBoundsItems` and calls `Grid.FindFreeSpace` on the Sorting Table.
+- The Sorting Table item (`602543c13fee350cd564d032`) declares `cellsH: 0, cellsV: 0`.
+- **`GridSerializer.Deserialize` turns those zeroes into the stretch flags**: it passes
+  `cellsH == 0` and `cellsV == 0` into `Grid..ctor`'s two stretch parameters. So a zero
+  dimension means *growable*, and the Sorting Table's grid is stretchable in both axes.
+  It is not incapable -- do not write that again.
+- It is, however, **unsized**. `Grid.GetFreeLocation` is a pure search: two loops bounded
+  by `firstDimensionSize`/`secondDimensionSize`, no growth anywhere. At `0 x 0` neither
+  loop runs and it returns null.
+- The only thing that sizes it is `SortingTableWindow.ShowGrid` -> `SortingTable.ClampSize`
+  -> `Grid.ClampSize(w, h, force: false)`. `ClampSize` *can* widen (it inserts columns and
+  calls `set_GridWidth` at IL_0230, gated on `CanStretchHorizontally` at IL_010d, which is
+  true here) -- but it only runs when the player opens that window, which is after the
+  main-menu rescue.
 
-So expect `Cannot find free space on sorting table for a bad item` per item. The failure
-path is `Debug.LogError` then continue -- nothing is destroyed, and the SPT server has no
-out-of-bounds concept and never prunes, so the items stay in the profile JSON.
+Net: on the launch after the mod is removed, the rescue logs `Cannot find free space on
+sorting table for a bad item` per item and skips. It might succeed on a later main-menu
+load in a session where the Sorting Table window was opened first. Not plannable.
 
 ### What 0.4.0 does instead
 
@@ -317,6 +323,13 @@ game and guessing at it.
   than 2580; 40 columns fits a 3440x1440 canvas exactly and 41 does not. The test
   asserting the claim failed, which is the only reason it was found. Write the assertion
   even when the claim feels obvious.
+- **Three passes to get the Sorting Table right, and the first two were confident.**
+  "The rescue works", then "the Sorting Table has a 0x0 grid so it cannot hold
+  anything", then finally the truth: the zeroes are *stretch flags*
+  (`GridSerializer.Deserialize` passes `cellsH == 0` / `cellsV == 0` straight into
+  `Grid..ctor`), the grid is growable, and what actually defeats the rescue is that
+  nothing has sized it yet at that moment. A magic-looking constant in a template is
+  worth chasing to its deserializer before concluding anything about it.
 - **A method named for what it intends is not evidence it succeeds.**
   `MoveBrokenItemsToSortingTable` was read as proof that stranded items get rescued,
   and that went into the README and into an answer to the user. Reading the rest of
