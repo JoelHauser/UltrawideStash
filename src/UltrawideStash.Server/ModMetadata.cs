@@ -20,7 +20,7 @@ public record ModMetadata : IModMetadata
 
     public List<string>? Contributors { get; init; }
 
-    public SemanticVersioning.Version Version { get; init; } = new("0.3.0");
+    public SemanticVersioning.Version Version { get; init; } = new("0.4.0");
 
     /// <summary>
     /// A hard gate: a mod outside the range loads nothing and logs nothing, so

@@ -5,7 +5,7 @@ space an ultrawide monitor has and a 16:9 one does not.
 
 **Nothing in this repo has ever run in the game.** Everything below was read out of the
 game assembly and SPT's database by static analysis. The logic is tested; the result on
-screen is not. Version 0.3.0 is a first cut plus a measuring tool, not a finished mod:
+screen is not. Version 0.4.0 is a first cut plus a measuring tool, not a finished mod:
 it makes the stash wider and tells you whether the UI can draw it. It does not yet fix
 the UI if the answer is no.
 
@@ -79,9 +79,9 @@ After a manual install, check the server DLL really landed at
 A server mod in the wrong folder is not loaded and **says nothing about it** — the stash
 simply stays 10 wide.
 
-> **Back up `SPT_Runtime\user\profiles` first.** Items you place past column 10 are
-> outside the grid if you ever remove this mod. That is inherent to changing a grid's
-> size, not a defect — but it is your stash.
+> **Back up `SPT_Runtime\user\profiles` first.** The mod takes its own `.bak` before
+> it edits anything, and it is built so that removing it cannot strand an item — but it
+> does write to your profile, and a backup you took yourself is worth having anyway.
 
 ## Configure
 
@@ -212,67 +212,57 @@ It refuses to narrow a stash, so it can never undo another mod's widening.
 The short version: **nothing this mod does deletes an item, and the game has its own
 recovery for the one bad case.**
 
-### Nothing is deleted, but do not count on the rescue
+### The mod keeps your items reachable itself
 
-Two separate facts, and only the first is solid.
+Resizing a grid can leave items outside it, and an item outside the grid is invisible —
+not deleted, but unreachable, which is what it feels like. EFT has its own rescue for
+this and **it does not work**: `MoveBrokenItemsToSortingTable` tries to move such items
+to the Sorting Table, whose template grid is `0 x 0`; a stash grid has no horizontal
+stretch and `FindFreeSpaceInGrid` never grows one, so it logs
+`Cannot find free space on sorting table for a bad item` and gives up.
 
-**Nothing deletes an out-of-bounds item.** The SPT server has no out-of-bounds concept at
-all and never prunes — an item that does not fit stays in the profile JSON with its stored
-coordinates, exactly where you left it. Put the stash back to a size that covers it and it
-is simply there again.
+So this mod does not rely on it. **On every server start it relocates any item that does
+not fit the stash it is about to produce**, writing the new positions into the profile.
 
-**The game tries to rescue them, and will probably fail.**
-`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs on every main-menu load: it
-collects each grid's `OverlappingItems` and `OutOfBoundsItems`, calls
-`Grid.FindFreeSpace` on the **Sorting Table**, and moves them there through a network
-transaction. That is real. What makes it unreliable is the Sorting Table itself:
+- It runs against the grid's **final** dimensions, whether or not this start changed
+  them. That matters because the profile can hold items from a previous, wider
+  configuration.
+- Items that already fit **keep their exact position**. Only the ones that would be
+  stranded move.
+- It packs biggest-first into the first free space, so the result looks like something
+  the game's own sort would have produced.
+- If something genuinely has nowhere to go, it **changes nothing at all** for that stash
+  and says so in the log. It will never apply a size that hides an item.
+- Every profile it edits gets a timestamped `.bak` alongside it first, and the original
+  is only replaced on the last step, so a failure part-way leaves the file untouched.
 
-- Its template grid is literally `cellsH: 0, cellsV: 0`.
-- `Stash.StashGrid` stretches **vertically only**, and its `Expand` grows the layout by
-  `rows * GridWidth` cells — which is zero cells when the width is zero.
-- `Grid.FindFreeSpaceInGrid` searches the grid's *current* dimensions and never grows it.
-- The only thing that sizes the Sorting Table is `SortingTableWindow.ShowGrid` calling
-  `SortingTable.ClampSize`, i.e. when you open that window — which is after the
-  main-menu rescue has already run.
-
-So the likely outcome is one `Cannot find free space on sorting table for a bad item`
-error per item in the log, and the items left out of bounds. Out of bounds means
-**invisible, not gone**: the failure path logs and skips, it never destroys anything.
+This is possible because of an ordering detail: the mod runs at `PostLoad`, and SPT's
+`SaveCallbacks` — which loads profiles — sits at the default priority of `int.MaxValue`
+and runs later. The files are edited *before* the server reads them, so there is no
+second copy to reconcile.
 
 ### Installing, and updating
 
-Columns only ever grow — the mod refuses to narrow a stash — and every `(x, y)` valid in a
-10-wide grid is still valid in a wider one. So widening on its own can never strand
-anything.
+Columns only ever grow on install, and every `(x, y)` valid at 10 wide is still valid
+wider, so widening on its own strands nothing.
 
-Rows are the risk, because `compensateRows` shortens as it widens. Before shortening
-anything the server reads every profile in `user/profiles` off disk, works out the real
-footprint of each stored item including rotation, and **never returns fewer rows than the
-deepest occupied one**. If capacity has to rise to respect that, it rises.
-
-If it cannot positively confirm what is stored — folder missing, a file that will not
-parse, an unexpected shape — it **does not shorten at all**. Columns still widen, rows stay
-at vanilla, and the log says why. That check runs on every server start, so raising
-`columns` later is re-checked rather than assumed.
+Rows are the part that could, because `compensateRows` shortens as it widens. Rows are
+clamped to the deepest row anything is actually standing on, so the ordinary case needs
+no relocation at all — and anything left over is relocated as above. Raising or lowering
+`columns` later is re-checked from scratch on every start.
 
 ### Uninstalling
 
-This is the one case with a real consequence, and it is inherent to changing a grid's size
-rather than something this mod does badly.
+**Set `columns` to `10`, start the server once, then delete the files.**
 
-Remove the mod and the template goes back to 10 wide. Anything in column 10 or beyond is
-then out of bounds. It is **not deleted** — it stays in the profile — but you will not be
-able to see or reach it, and per the section above the Sorting Table rescue probably will
-not collect it either.
+That single start packs everything back into a vanilla-shaped stash — the log will say
+how many items it relocated — and from then on the mod is doing nothing, so removing it
+changes nothing. The recommendation is in the startup log too, so it is hard to miss.
 
-**So move everything into the first 10 columns before you uninstall.** Auto-sort will not
-do this for you: it packs into the grid it currently has, which is the wide one. Check the
-probe's `out-of-bounds items: none` line afterwards — that reads the game's own
-`Grid.OutOfBoundsItems`, so it is the authoritative answer rather than a guess.
-
-If you have already uninstalled and things are missing, do not panic and do not start a
-new profile: reinstall the mod at the same `columns`, and everything reappears where it
-was. That is the recovery path, and it works because nothing was ever removed.
+If you remove the DLLs without that step, items in column 10 and beyond become
+unreachable. They are **not deleted** — the server never prunes, so they are still in the
+profile with their coordinates. Reinstall at the same `columns`, and they are all back
+exactly where they were; then do the uninstall properly.
 
 ---
 
@@ -338,7 +328,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-64 logic tests and 16 database checks pass.
+68 logic tests and 16 database checks pass.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
 reading their code - see Compatibility - not by running them. None of the three is

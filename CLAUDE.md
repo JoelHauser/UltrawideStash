@@ -5,7 +5,7 @@ has. Two halves: an SPT server mod that changes the stash item template, and a
 **read-only** BepInEx probe that measures the stash panel and logs what it finds.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 64 logic tests and 16 database checks
+assembly and SPT's database by static analysis. 68 logic tests and 16 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -118,37 +118,49 @@ The profile path comes from `SaveServer`'s private `profileFilepath` where it ca
 reflected, falling back to `AppContext.BaseDirectory` + `user/profiles` -- the literal
 `SaveServer.RemoveProfile` itself uses.
 
-### What the game does with an item that does not fit
+### The mod relocates rather than trusting the game's rescue
 
-Read carefully, because 0.3.0 first recorded this too optimistically and the correction
-matters more than the original claim.
+**Do not reinstate any wording that says EFT rescues out-of-bounds items.** It tries and
+it fails, and 0.3.0 shipped that claim twice before it was checked properly:
 
-**Nothing deletes it.** The SPT server has no out-of-bounds concept and never prunes; the
-item stays in the profile JSON with its stored coordinates. Restore a grid that covers it
-and it is back. This part is solid.
+- `MainMenuShowOperation.MoveBrokenItemsToSortingTable` gathers `OverlappingItems` +
+  `OutOfBoundsItems`, calls `Grid.FindFreeSpace` on the Sorting Table, then
+  `ItemManipulator.Move` + `TryRunNetworkTransaction`.
+- The Sorting Table item (`602543c13fee350cd564d032`) is `cellsH: 0, cellsV: 0`.
+- `Stash.StashGrid..ctor` copies `CanStretchVertically` only -- a stash grid has **no**
+  horizontal stretch -- and `StashGrid.Expand` adds `delta * GridWidth` cells, which is
+  zero at zero width.
+- `Grid.FindFreeSpaceInGrid` searches current dimensions and never grows the grid.
+- The only caller of `SortingTable.ClampSize` is `SortingTableWindow.ShowGrid`, i.e. the
+  player opening that window, long after the main-menu rescue ran.
 
-**The rescue exists but will probably not fire.**
-`MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs every main-menu load and does
-try: gather `OverlappingItems` + `OutOfBoundsItems`, `Grid.FindFreeSpace` on the Sorting
-Table, `ItemManipulator.Move`, `TryRunNetworkTransaction`. But:
+So expect `Cannot find free space on sorting table for a bad item` per item. The failure
+path is `Debug.LogError` then continue -- nothing is destroyed, and the SPT server has no
+out-of-bounds concept and never prunes, so the items stay in the profile JSON.
 
-- The Sorting Table item (`602543c13fee350cd564d032`) has `cellsH: 0, cellsV: 0`,
-  `isSortingTable: true`.
-- `Stash.StashGrid..ctor` copies `CanStretchVertically` only -- there is **no horizontal
-  stretch on a stash grid at all** -- and `StashGrid.Expand` adds `delta * GridWidth`
-  cells, which is zero when the width is zero.
-- `Grid.FindFreeSpaceInGrid` searches the current `GridWidth`/`GridHeight` and never
-  grows the grid.
-- The only caller of `SortingTable.ClampSize` is `SortingTableWindow.ShowGrid` -- the UI,
-  opened by the player, long after the main-menu rescue ran.
+### What 0.4.0 does instead
 
-So expect `Cannot find free space on sorting table for a bad item` per item, and the items
-left out of bounds. The per-item failure path is `Debug.LogError` then `continue`; it
-never destroys anything.
+`StashRepack` + `ProfileStore` relocate out-of-bounds items **in the profile file** on
+every start, against the grid's final dimensions.
 
-**Therefore the uninstall advice is not politeness, it is the actual recovery plan:** move
-everything into the first 10 columns before removing the mod, and if that is missed,
-reinstalling at the same `columns` brings it all back.
+The ordering that made 0.2.0's guard broken is what makes this correct: we run at
+`PostLoad` (1,000,000), `SaveCallbacks` sits at the default `int.MaxValue`, SPT orders
+ascending -- so the file is edited before the server ever reads it. No second copy, no
+reconciliation.
+
+Rules worth keeping:
+
+- **Driven by final size, not by whether this run changed anything.** Dropping `columns`
+  16 -> 10 alters no template (it is already 10) but the profile is full of x >= 10.
+  Missing this would make the uninstall path do nothing.
+- **Items that fit are never moved.** Reshuffling a stash someone arranged is its own
+  kind of damage.
+- **All-or-nothing per stash.** Every profile is planned before any is written; one
+  item with nowhere to go aborts the whole stash, template change included.
+- **Backup, temp file, then replace.** `ProfileStore.ApplyMoves` copies to a timestamped
+  `.bak`, writes a `.tmp`, and only then overwrites.
+- Biggest-first placement, because singles placed first fragment the grid and a large
+  case then fails on space that existed.
 
 ### The occupancy arithmetic
 
@@ -381,13 +393,18 @@ grid's own width -- see the Compatibility section for the evidence. Two changes 
 of that read: compensation rounds **up** rather than down, so sorting can never fail for
 want of the cells flooring threw away; and the probe now reports the `Grid.Layout`
 invariant ASS asserts, plus a census of which companion plugins are loaded. Built clean,
-64 logic tests and 16 database checks pass.
+68 logic tests and 16 database checks pass.
 
 **0.3.0**, item safety, prompted by the user asking what happens to a player's items on
 install, on update and on uninstall. Answering it properly found that 0.2.0's occupancy
 guard never worked -- see the load-order bug above -- and that the game rescues
 out-of-bounds items to the Sorting Table by itself, which is why that failure would have
 been survivable. `ProfileScan` replaces the guard and fails safe. 64 logic tests.
+
+**0.4.0**, because "we cannot have this be the case at all" -- correct response to being
+told an uninstall could leave items invisible. The mod now relocates out-of-bounds items
+in the profile itself rather than hoping the game will. Uninstalling is a documented,
+tested procedure: set columns to 10, start once, delete. 68 logic tests.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log
