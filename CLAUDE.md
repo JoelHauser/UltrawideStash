@@ -6,7 +6,7 @@ has. Two halves: an SPT server mod that changes the stash item template, and a
 writes the measurement where the server reads it.
 
 **Nothing here has ever run in the game.** Everything was read out of the patched game
-assembly and SPT's database by static analysis. 136 logic tests and 19 database checks
+assembly and SPT's database by static analysis. 144 logic tests and 19 database checks
 pass; that means the arithmetic is right, not that the stash looks right.
 
 ## The box this was built on
@@ -311,8 +311,9 @@ src/UltrawideStash.Probe/             net472, BepInEx -- changes nothing in the 
   Companions.cs       which stash-touching plugins are loaded, for the report
   ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
 
-tests/UltrawideStash.Server.Tests/    xunit, 136 tests
+tests/UltrawideStash.Server.Tests/    xunit, 144 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
+  RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
   StashLadderTests.cs           the hideout ladder, and the stranding it prevents
   StashLayoutTests.cs           column/row decisions against the five real stashes
@@ -603,14 +604,31 @@ change fails the suite rather than the player.
 asserts 28 -> 25, because this repo's notes already record a fix and test pair that were
 both reverted when the test turned out to pass against the unfixed code.
 
-### Left undone, deliberately
+### Row drift between restarts -- characterised, and it is smaller than it first looked
 
-**Rows still drift between restarts.** `StashWidener` recomputes rows every start, so a
-player who clears out the bottom of a deep stash sees it shrink back toward the compensated
-target on the next start. Nothing is lost -- those rows were empty, and the ladder floor
-covers the upgrade case -- but the stash visibly changes size with no action from the
-player. Fixing it means persisting the applied shape per profile, which is a state file
-this mod does not otherwise need. Flagged to the user, not built.
+`StashWidener` recomputes rows on every start: `rows = max(compensatedTarget,
+deepestOccupiedRow)`, and the clamp reads the profile as it is *now*. So the row count
+follows the deepest item. `RowDriftTests` pins the shape, and the shape is the answer:
+
+- **It only ever goes down.** The clamp can raise rows above the target but nothing
+  lowers them below it.
+- **It converges, and then it is a fixed point.** Once rows reach the target the stash
+  *is* that tall, so nothing can be stored below it, so the clamp can never bind again.
+  It cannot oscillate. Checked by emptying a stash one row at a time from 68 to 0.
+- **It never crosses an item.** Verified over 7 widths x 5 stash heights x every depth:
+  rows >= deepest, always. So the repack has nothing to relocate and the log reads
+  `0 item(s) relocated` throughout.
+- **`compensateRows: false` has no drift at all** -- the clamp never binds.
+
+So it is a one-time settling after install (or after raising `columns`), not an ongoing
+wobble, and it cannot lose anything. What it *can* do is read as "I tidied my stash and
+it got smaller", with the cause a restart away from the effect. A Standard stash feels it
+most: target `ceil(300/16) = 19` against a vanilla 30 they may have been filling.
+
+Still not fixed, and the trade is clearer now: persisting the applied shape per profile
+would hold the high-water mark, but that is a state file this mod does not otherwise
+need, and holding it means permanently granting capacity the compensation exists to
+avoid. **Left as is deliberately.** Flagged to the user.
 
 ### Still not run in the game
 
