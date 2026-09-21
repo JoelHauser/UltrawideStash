@@ -5,7 +5,7 @@ space an ultrawide monitor has and a 16:9 one does not.
 
 **Nothing in this repo has ever run in the game.** Everything below was read out of the
 game assembly and SPT's database by static analysis. The logic is tested; the result on
-screen is not. Version 0.1.0 is a first cut plus a measuring tool, not a finished mod.
+screen is not. Version 0.2.0 is a first cut plus a measuring tool, not a finished mod.
 
 ---
 
@@ -92,9 +92,12 @@ run:
 refused.
 
 **`compensateRows`** — `true` shortens the stash as it widens, so total capacity stays
-at vanilla. An Edge of Darkness stash goes from 10x68 (680 cells) to 16x42 (672) — much
-less scrolling, no balance change. `false` keeps every row, so 16 columns means 16x68
-and 60% more space.
+at vanilla. An Edge of Darkness stash goes from 10x68 (680 cells) to 16x43 (688) — much
+less scrolling, no meaningful balance change. `false` keeps every row, so 16 columns
+means 16x68 and 60% more space.
+
+It rounds up rather than down, so the stash is never smaller than vanilla. That matters
+for sorting — see Compatibility.
 
 Rows are **never** cut below the deepest row you have something standing on. The server
 reads every profile at startup, works out the real footprint of each stored item
@@ -102,6 +105,74 @@ reads every profile at startup, works out the real footprint of each stored item
 flat, it goes up — losing an item is not an acceptable price for a tidy number.
 
 **`verbose`** — log every stash's before and after rather than one summary line.
+
+---
+
+## Compatibility
+
+Checked by reading the code, not by playing. All three were read at 0.2.0.
+
+### EFT's own auto-sort — compatible by construction
+
+`ItemManipulator.Sort` empties every grid, orders the items with `ItemSorter.Sort`,
+then calls `Grid.AddAnywhere` on each one with a retry budget of five. `AddAnywhere`
+goes to `FindFreeSpace` → `FindFreeSpaceInGrid`, and **every method in that path reads
+the grid's own `GridWidth`/`GridHeight`**. Nothing in it hard-codes 10, or any width.
+
+### Advanced Stash Sorting (`com.slpf.advstashsorting`) — compatible
+
+It is a **BepInEx client plugin**, not a server mod, despite how it is listed. It
+replaces both the sort order and the placement: `OrderedStashLayoutPlanner` reads
+`grid.GridWidth` and `grid.GridHeight` and passes them into `OrderedLayoutEngine`,
+where every bound is `request.Width` / `request.Height`. No hard-coded width anywhere.
+
+One thing it asserts is worth knowing: `CopyLayout` throws
+`"Grid layout dimensions are inconsistent"` unless `grid.Layout.Count` equals
+`GridWidth * GridHeight`. That invariant holds here — the grid is built from the
+already-modified template before anything sees it — and the probe now prints it so a
+failure would be immediately explicable rather than mysterious.
+
+### UI Fixes (`com.tyfon.uifixes`) — compatible
+
+Its client half has no stash-width assumption. Its **server** half does read the
+template — `PutToolsBackAddItemsPatch` calls `grid.Properties.CellsH.Value` and
+`CellsV.Value` — but it reads them live, per request, long after this mod has run at
+`PostLoad`. It therefore picks up the new width automatically.
+
+The two `AcceptableValueRange<int>(1, 10)` in its settings are mousewheel scroll speed,
+not columns.
+
+### The hideout stash bonus stacks, and is worth understanding
+
+`InventoryHelper.GetPlayerStashSize` reads `CellsH`/`CellsV` off the template and then
+**adds** the profile's `StashSize` bonus to the row count. So this mod sets the base and
+the hideout bonus is applied on top — they compose, and neither overwrites the other.
+
+The side effect: a bonus row is worth more when the stash is wider. At 16 columns a
++10-row bonus is 160 cells rather than 100. So `compensateRows` holds the *base* at
+vanilla, and a profile with hideout bonuses ends up somewhat above vanilla overall. That
+is in your favour and not worth engineering around — scaling the bonus would mean
+patching `GetPlayerStashSize`, which is exactly the kind of thing that fights other mods.
+
+### Why capacity rounds up, not down
+
+Sorting is the reason. Both the vanilla sort and Advanced Stash Sorting fail outright
+when the result will not fit — the latter with its own `InsufficientSortSpaceError`.
+Rounding rows down would lose up to `columns - 1` cells, so a nearly-full stash that
+sorted before this mod could refuse to sort after it.
+
+So `compensateRows` rounds **up**: the grid is never smaller than vanilla. It overshoots
+by less than one row — 688 cells against 680 on an Edge of Darkness stash at 16 columns,
+about 1%. Two tests hold both ends of that.
+
+### Other server mods that change stash size
+
+This reads whatever is in the template when it runs and treats that as the baseline, so
+"hold capacity" means the capacity it found, not BSG's. If you also run a storage
+expansion mod, load order decides which is the baseline, and `verbose: true` prints the
+before and after for each stash so you can see what happened.
+
+It refuses to narrow a stash, so it can never undo another mod's widening.
 
 ---
 
@@ -118,8 +189,10 @@ You get one block per screen resolution per session, like:
 ```
 [UltrawideStash] ===== stash measurement =====
 [UltrawideStash] screen 3440x1440; canvas scale 1.333; canvas logical 2580x1080
-[UltrawideStash] stash grid 16x42 cells; rect 1009.0x2647.0 px (a 16-wide grid draws at 1009 px)
+[UltrawideStash] stash grid 16x43 cells; rect 1009.0x2710.0 px (a 16-wide grid draws at 1009 px)
 [UltrawideStash] out-of-bounds items: none
+[UltrawideStash] grid layout: 688 cells, consistent with 16x43
+[UltrawideStash] companion plugins: UI Fixes 3.2.0, Advanced Stash Sorting 1.0.6 (14 plugins loaded in total)
 [UltrawideStash] ancestors, grid outward -- name | rect | anchors | components:
 [UltrawideStash]   [0] Grid | 1009.0x2647.0 | ax 0.00-0.00 fixed | GridView,LayoutElement
 [UltrawideStash]   [1] Content | ... | ax 0.00-1.00 STRETCH | VerticalLayoutGroup,ContentSizeFitter
@@ -139,6 +212,10 @@ What to read from it:
   exactly what a fix has to change.
 - **`columns that would fit`** — the ceiling for this monitor. Set `columns` from this
   rather than from taste.
+- **`grid layout`** — must say `consistent`. If it does not, sorting mods will refuse to
+  sort, and this line is why.
+- **`companion plugins`** — which stash-touching mods were loaded, and at what version,
+  so a report describes itself.
 
 ## Building
 
@@ -162,6 +239,10 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
 43 logic tests and 16 database checks pass.
+
+Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
+reading their code - see Compatibility - not by running them. None of the three is
+installed on the development machine.
 
 Untested, in rough order of risk:
 

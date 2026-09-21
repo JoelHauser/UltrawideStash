@@ -73,6 +73,18 @@ namespace UltrawideStash.Probe
         internal static PropertyInfo OutOfBoundsItems { get; private set; }
 
         /// <summary>
+        /// <c>EFT.InventoryLogic.Grid.Layout</c>, the occupancy bitmap.
+        ///
+        /// Optional, and reported because Advanced Stash Sorting asserts
+        /// <c>Layout.Count == GridWidth * GridHeight</c> in its <c>CopyLayout</c> and
+        /// throws "Grid layout dimensions are inconsistent" otherwise. That invariant
+        /// should always hold -- the grid is built from the template before anything
+        /// sees it -- but if a width change ever broke it, that mod's sort would be
+        /// the visible symptom and this line is the direct evidence.
+        /// </summary>
+        internal static PropertyInfo GridLayout { get; private set; }
+
+        /// <summary>
         /// Resolve everything. Safe to call more than once; only the first call does
         /// any work.
         /// </summary>
@@ -133,6 +145,7 @@ namespace UltrawideStash.Probe
 
                 // Optional -- absence costs one line of the report, not the report.
                 OutOfBoundsItems = AccessTools.Property(grid, "OutOfBoundsItems");
+                GridLayout = AccessTools.Property(grid, "Layout");
 
                 Ready = true;
             }

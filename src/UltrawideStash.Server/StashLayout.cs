@@ -99,10 +99,21 @@ public static class StashLayout
 
         if (compensateRows)
         {
-            // Floor, not round: capacity may come in a little under vanilla but can
-            // never come in over it, so "same capacity" is a promise rather than an
-            // approximation in the player's favour.
-            var wanted = vanillaColumns * vanillaRows / columns;
+            // Ceiling, not floor, and this is a correctness matter rather than
+            // generosity.
+            //
+            // Auto-sort empties the grid and re-places everything
+            // (ItemManipulator.Sort -> Grid.AddAnywhere). Advanced Stash Sorting
+            // does the same through its own layout engine and raises
+            // InsufficientSortSpaceError when it cannot fit. Flooring loses up to
+            // columns-1 cells, so a nearly-full stash that sorted before the mod
+            // could fail to sort after it -- a visible, confusing regression bought
+            // for nothing.
+            //
+            // Ceiling guarantees the new grid is never smaller than the old one. The
+            // price is under one row of extra space (8 cells on a 10x68 stash at 16
+            // columns, about 1%), which is not a balance change anyone will notice.
+            var wanted = (vanillaColumns * vanillaRows + columns - 1) / columns;
 
             // The guard that makes this safe to run against a stash with things in
             // it. Holding capacity is the goal; not losing anything is the rule, and
@@ -113,7 +124,7 @@ public static class StashLayout
         }
 
         var reason = compensateRows
-            ? (rows > vanillaColumns * vanillaRows / columns
+            ? (rows > (vanillaColumns * vanillaRows + columns - 1) / columns
                 ? $"rows held at {rows} to clear items stored as deep as row {deepestOccupiedRow}"
                 : "capacity held at vanilla")
             : "rows unchanged";

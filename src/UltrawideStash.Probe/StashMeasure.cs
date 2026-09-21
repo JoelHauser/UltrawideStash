@@ -184,6 +184,11 @@ namespace UltrawideStash.Probe
                 WidthOfColumns(columns)));
 
             AppendOutOfBounds(sb, grid);
+            AppendLayoutConsistency(sb, grid, columns, rows);
+
+            var companions = Companions.Describe();
+
+            if (companions.Length > 0) sb.AppendLine(companions);
 
             sb.AppendLine("ancestors, grid outward -- name | rect | anchors | components:");
 
@@ -224,6 +229,38 @@ namespace UltrawideStash.Probe
                 sb.AppendLine(count == 0
                     ? "out-of-bounds items: none"
                     : "out-of-bounds items: " + count + " -- THESE ARE UNREACHABLE, restore a profile backup");
+            }
+            catch
+            {
+                // An optional diagnostic. Its absence is not worth a line.
+            }
+        }
+
+        /// <summary>
+        /// Whether <c>Grid.Layout</c> still matches the grid's dimensions.
+        ///
+        /// Advanced Stash Sorting asserts exactly this in its <c>CopyLayout</c> and
+        /// throws "Grid layout dimensions are inconsistent" when it fails, so a
+        /// mismatch here is the precise explanation for that mod refusing to sort.
+        /// It should never happen -- the grid is built from the template before
+        /// anything sees it -- but "should never" is why it is worth one line.
+        /// </summary>
+        private static void AppendLayoutConsistency(StringBuilder sb, object grid, int columns, int rows)
+        {
+            if (GameTypes.GridLayout == null) return;
+
+            try
+            {
+                var layout = GameTypes.GridLayout.GetValue(grid, null) as ICollection;
+
+                if (layout == null) return;
+
+                var expected = columns * rows;
+
+                sb.AppendLine(layout.Count == expected
+                    ? $"grid layout: {layout.Count} cells, consistent with {columns}x{rows}"
+                    : $"grid layout: {layout.Count} cells but {columns}x{rows} is {expected} -- INCONSISTENT, "
+                      + "sorting mods will refuse to sort");
             }
             catch
             {

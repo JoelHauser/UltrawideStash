@@ -100,6 +100,89 @@ If honouring the items means capacity rises instead of staying flat, it rises. L
 item is not an acceptable price for a tidy number, and there is a test that says so
 (`AFullStashRefusesToBeShortened`).
 
+## Compatibility, and how it was established
+
+Asked for at 0.2.0: auto-sort, Tyfon's UI Fixes and Advanced Stash Sorting. All three
+were settled by **reading code** -- the game's from the patched assembly, the two mods
+from their MIT sources -- not by running anything. Clones were made under the session
+scratchpad; re-clone rather than trusting this summary if anything looks off.
+
+- **UI Fixes** -- https://github.com/tyfon7/UIFixes, GUID `com.tyfon.uifixes`
+- **Advanced Stash Sorting** -- https://github.com/slpf/AdvancedStashSorting, GUID
+  **`com.slpf.advstashsorting`** (note: NOT `advancedstashsorting`, which is what the
+  name suggests and what was guessed wrong first). Listed on sp-mod.com as a server
+  mod; it is a **client plugin**.
+- **Stash Management Helper** -- GUID `com.markosz.stashmanagementhelper`, read only
+  for its GUID.
+
+### Auto-sort is width-agnostic by construction
+
+`ItemManipulator.Sort(CompoundItem, InventoryController, bool)` -- from the IL, not a
+guess:
+
+```
+for each grid: check every item passes the filter        -> AutomaticSortNonFilteredItemError
+InventoryController.IsAllowedToSort                      -> CannotSortItemError
+remove every item from every grid (ItemAddress.Remove)
+ItemSorter.Sort(items)                                   <- ordering ONLY, by type
+retry budget = 5 (ldc.i4.5)
+for each item: Grid.AddAnywhere(item, EErrorHandlingType) <- placement
+  on failure: roll back the last GridAddResult, decrement the budget
+```
+
+`ItemSorter` only orders. `Grid.AddAnywhere` -> `FindFreeSpace` -> `FindFreeSpaceInGrid`
+does the placing, and the Grid methods that read `GridWidth`/`GridHeight` are exactly:
+`get/set_GridWidth`, `get/set_GridHeight`, both ctors, `RaiseResizeEvent`, `AddInternal`,
+`Resize`, `CheckLayout`, `SetLayout`, `LiesWithinGrid`, `HasFreeSpaceForItems`,
+`FindFreeSpaceInGrid`, `FillSpaceBuffer`, `ClampSize`. No literal width anywhere.
+
+Note `Grid.Resize(Item, IntVec2, IntVec2, bool)` resizes an **item within** the grid
+(a folding stock changing footprint), not the grid itself. Easy to misread.
+
+### The two mods
+
+Neither hard-codes a stash width. Verified by grep over both trees for a literal 10 near
+grid/stash/column/cell words: UI Fixes' only hits are two
+`AcceptableValueRange<int>(1, 10)` for **mousewheel scroll speed**; ASS has none.
+
+- **ASS reimplements placement.** `OrderedStashLayoutPlanner` reads `grid.GridWidth` /
+  `grid.GridHeight` (lines 21-22) into an `OrderedLayoutRequest`, and
+  `OrderedLayoutEngine` bounds everything on `request.Width`/`request.Height`.
+  `BeamWidth = 48` is a search beam, not a grid width.
+- **ASS asserts an invariant worth remembering.** `CopyLayout` throws
+  `"Grid layout dimensions are inconsistent"` unless
+  `grid.Layout.Count == GridWidth * GridHeight`. The probe now prints this, because it
+  is the precise explanation for that mod refusing to sort.
+- **UI Fixes' server half** reads `grid.Properties.CellsH.Value` in
+  `PutToolsBackAddItemsPatch`, live per request, well after our `PostLoad` edit. Its
+  client half has no width assumption.
+- ASS already ships a `UIFixesCompatPatch` prefixing
+  `UIFixes.SortPatches+StackFirstPatch`, so those two coordinate between themselves and
+  neither needs anything from us.
+
+### The hideout bonus composes; do not try to scale it
+
+`InventoryHelper.GetPlayerStashSize(PmcData)` reads `CellsH`/`CellsV` off the template
+(falling back to 10 and 66 when the value is 0) and then **adds** the profile's
+`StashSize` bonus to the rows. So our edit is the base and the bonus stacks on top.
+
+Consequence: a bonus row is worth `columns` cells, so it is worth more when wider.
+`compensateRows` therefore holds the **base** at vanilla, and a profile with hideout
+bonuses ends up above vanilla overall. Left alone deliberately -- scaling it would mean
+patching `GetPlayerStashSize`, which is where every other stash mod also lives.
+
+### Why compensation rounds UP (changed in 0.2.0)
+
+0.1.0 floored, on the reasoning that capacity should never exceed vanilla. That was
+wrong, and the compatibility read is what found it: **both** sorters fail outright when
+the result will not fit -- ASS with its own `InsufficientSortSpaceError` -- and flooring
+loses up to `columns - 1` cells. A nearly-full stash that sorted before the mod could
+refuse to sort after it, a visible regression bought for a 1% number.
+
+Ceiling now, so the grid is never smaller than vanilla.
+`CompensatingNeverDecreasesCapacity` and `CompensatingStaysWithinOneRowOfVanilla` hold
+both ends.
+
 ## How this is put together
 
 ```
@@ -206,8 +289,14 @@ In rough order of risk:
 ## Where this was left off
 
 2026-09-21: **0.1.0**, the first cut. Server mod sets the width with a capacity-holding
-default and an occupancy guard; probe measures and logs. Built clean, 43 logic tests and
-16 database checks pass, `releases\UltrawideStash_V0.1.0.zip` packed.
+default and an occupancy guard; probe measures and logs.
+
+**0.2.0**, compatibility. Auto-sort, UI Fixes and Advanced Stash Sorting all read the
+grid's own width -- see the Compatibility section for the evidence. Two changes came out
+of that read: compensation rounds **up** rather than down, so sorting can never fail for
+want of the cells flooring threw away; and the probe now reports the `Grid.Layout`
+invariant ASS asserts, plus a census of which companion plugins are loaded. Built clean,
+43 logic tests and 16 database checks pass.
 
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log

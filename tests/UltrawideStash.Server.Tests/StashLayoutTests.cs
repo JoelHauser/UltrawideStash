@@ -20,9 +20,17 @@ public class StashLayoutTests
         { 10, 72, "The Unheard Edition" },
     };
 
+    /// <summary>
+    /// The guarantee auto-sort depends on.
+    ///
+    /// Sorting empties the grid and re-places everything, and both the game's own
+    /// ItemManipulator.Sort and Advanced Stash Sorting fail outright if the result
+    /// will not fit. A stash that sorted before this mod must still sort after it,
+    /// so the compensated grid is never allowed to be smaller than the original.
+    /// </summary>
     [Theory]
     [MemberData(nameof(RealStashes))]
-    public void CompensatingNeverIncreasesCapacity(int columns, int rows, string edition)
+    public void CompensatingNeverDecreasesCapacity(int columns, int rows, string edition)
     {
         var vanilla = columns * rows;
 
@@ -32,25 +40,28 @@ public class StashLayoutTests
 
             Assert.True(plan.Applied, $"{edition} at {target} columns: {plan.Reason}");
             Assert.True(
-                plan.Capacity <= vanilla,
-                $"{edition} at {target} columns gained capacity: {plan.Capacity} > {vanilla}");
+                plan.Capacity >= vanilla,
+                $"{edition} at {target} columns lost capacity: {plan.Capacity} < {vanilla}");
         }
     }
 
+    /// <summary>
+    /// And the other side of it: "same capacity" has to still mean something. The
+    /// ceiling can only overshoot by less than one row.
+    /// </summary>
     [Theory]
     [MemberData(nameof(RealStashes))]
-    public void CompensatingStaysCloseToVanillaCapacity(int columns, int rows, string edition)
+    public void CompensatingStaysWithinOneRowOfVanilla(int columns, int rows, string edition)
     {
         var vanilla = columns * rows;
 
-        for (var target = 11; target <= 24; target++)
+        for (var target = 11; target <= StashLayout.MaxColumns; target++)
         {
             var plan = StashLayout.For(columns, rows, target, compensateRows: true, deepestOccupiedRow: 0);
 
-            // Flooring can only lose up to one short row, which is target-1 cells.
             Assert.True(
-                plan.Capacity > vanilla - target,
-                $"{edition} at {target} columns lost too much: {plan.Capacity} against {vanilla}");
+                plan.Capacity < vanilla + target,
+                $"{edition} at {target} columns gained too much: {plan.Capacity} against {vanilla}");
         }
     }
 
@@ -73,7 +84,7 @@ public class StashLayoutTests
     [Fact]
     public void RowsAreNeverCutBelowStoredItems()
     {
-        // 10x68 at 16 columns wants 42 rows. An item standing on row 60 needs 61.
+        // 10x68 at 16 columns wants 43 rows. An item standing on row 60 needs 61.
         var plan = StashLayout.For(10, 68, 16, compensateRows: true, deepestOccupiedRow: 61);
 
         Assert.True(plan.Applied);
@@ -84,11 +95,12 @@ public class StashLayoutTests
     [Fact]
     public void OccupancyBelowTheTargetDoesNotForceExtraRows()
     {
-        // Wants 42; nothing is stored deeper than row 10, so 42 stands.
+        // ceil(680/16) = 43; nothing is stored deeper than row 10, so 43 stands.
         var plan = StashLayout.For(10, 68, 16, compensateRows: true, deepestOccupiedRow: 10);
 
         Assert.True(plan.Applied);
-        Assert.Equal(42, plan.Rows);
+        Assert.Equal(43, plan.Rows);
+        Assert.True(plan.Capacity >= 10 * 68);
     }
 
     [Theory]
