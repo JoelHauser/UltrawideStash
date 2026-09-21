@@ -253,6 +253,9 @@ no relocation at all — and anything left over is relocated as above. Raising o
 
 ### Uninstalling
 
+**No — you cannot simply delete the mod.** There is one step first, and it takes one
+server start.
+
 **Set `columns` to `10`, start the server once, then delete the files.**
 
 That single start packs everything back into a vanilla-shaped stash — the log will say

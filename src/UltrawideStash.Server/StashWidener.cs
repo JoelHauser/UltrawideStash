@@ -68,9 +68,13 @@ public class StashWidener(
 
     public Task OnLoadAsync(CancellationToken cancellationToken)
     {
+        var folder = ModFolder();
+
         var settings = StashSettings.Load(
-            System.IO.Path.Combine(ModFolder(), "ultrawidestash.config.json"),
+            System.IO.Path.Combine(folder, "ultrawidestash.config.json"),
             out var note);
+
+        WriteUninstallNote(folder);
 
         var profiles = ReadProfiles(out var readable, out var why);
 
@@ -297,6 +301,72 @@ public class StashWidener(
         }
 
         return System.IO.Path.Combine(AppContext.BaseDirectory, "user", "profiles");
+    }
+
+    /// <summary>
+    /// Drop a plain-text uninstall note beside the DLL, rewritten on every start.
+    ///
+    /// The one thing that must not be got wrong is removing the mod while items are
+    /// still out in the extra columns: nothing is deleted, but they become unreachable
+    /// until it is reinstalled. Saying so in the README and in the startup log is not
+    /// enough, because the person about to delete this folder is looking at **this
+    /// folder**, not at either of those.
+    ///
+    /// Best effort. A failure here must never stop the mod loading.
+    /// </summary>
+    private void WriteUninstallNote(string folder)
+    {
+        const string name = "HOW-TO-UNINSTALL.txt";
+
+        var text = string.Join(Environment.NewLine,
+        [
+            "Ultrawide Stash -- how to remove this mod safely",
+            "================================================",
+            "",
+            "DO NOT just delete this folder while your stash is wider than 10 columns.",
+            "",
+            "Nothing would be deleted -- the SPT server never removes items -- but anything",
+            "sitting in column 10 or beyond would become invisible and unreachable, because",
+            "a vanilla stash is only 10 wide and the game's own recovery for this does not",
+            "work (the Sorting Table it tries to move things into has a 0x0 grid).",
+            "",
+            "Instead:",
+            "",
+            "  1. Open ultrawidestash.config.json (in this folder) and set:  \"columns\": 10",
+            "  2. Start the SPT server once and wait for it to finish loading.",
+            "     The log will say how many items it moved back into the stash.",
+            "  3. Stop the server, then delete:",
+            "       - this folder",
+            "       - BepInEx/plugins/UltrawideStash.Probe.dll",
+            "",
+            "That is all. After step 2 the mod is not changing anything, so removing it",
+            "changes nothing either.",
+            "",
+            "ALREADY DELETED IT AND THINGS ARE MISSING?",
+            "",
+            "Nothing is lost. Reinstall the mod with the same \"columns\" value you were",
+            "using, start the server, and everything will be exactly where you left it.",
+            "Then follow the steps above.",
+            "",
+            "Profile backups this mod has taken are named like:",
+            "  <profile>.json.ultrawidestash-<timestamp>.bak",
+            "and live beside your profiles in SPT_Runtime/user/profiles.",
+            "",
+        ]);
+
+        try
+        {
+            var path = System.IO.Path.Combine(folder, name);
+
+            // Only rewrite when it differs, so the file's timestamp stays meaningful.
+            if (File.Exists(path) && File.ReadAllText(path) == text) return;
+
+            File.WriteAllText(path, text);
+        }
+        catch (Exception e)
+        {
+            logger.Warning($"[UltrawideStash] Could not write {name} ({e.Message}).");
+        }
     }
 
     private static string ModFolder()
