@@ -754,6 +754,55 @@ screen 1920x1080 -- CHECK: viewport 632.0 px vs grid 1198.0 px -- OVERFLOW by 56
 Self-healing on the next server start, because the probe rewrites the measurement for
 the new resolution -- but broken in between. **Not fixed.**
 
+### The grid is global; the widening is one screen
+
+**`SimpleStashPanel` is on six screens, and only the character screen gets widened.**
+The stash is one item, its width lives in the template, so it is `columns` wide
+*everywhere it is drawn*. The panel fix is per-screen. Nobody had looked at the other
+five until the user asked, 2026-09-22.
+
+Read off the patched assembly -- every type carrying a `SimpleStashPanel` field:
+
+| Screen | Panel widened? |
+| --- | --- |
+| `EFT.UI.ItemsPanel` (`InventoryScreen`) -- the character screen | **yes** |
+| `EFT.UI.TraderDealScreen` | no |
+| `EFT.UI.TransferItemsScreen` | no |
+| `EFT.UI.ScavengerInventoryScreen` | no |
+| `UI.Hideout.BaseHideoutAreaTransferItemsScreen<,>` | no |
+| `EFT.UI.PrestigeTransferItemsState` | no |
+
+To re-derive it, walk `MainModule.GetTypes()` and print every `FieldDefinition` whose
+`FieldType.FullName` matches `SimpleStashPanel`. The instruction-operand sweep for the
+same string adds only the compiler-generated closures of those same types.
+
+`AfterStashShow` has **no screen filter** -- the postfix is on `SimpleStashPanel.Show`,
+so it runs on all six. What stops it doing damage on the other five is `StashWiden`'s
+own precondition: it needs a stretching sibling called `LeftSide` under the panel's
+parent, which is the character screen's layout, and returns `cannot widen: no 'LeftSide'
+beside the stash panel` otherwise. **That is a guard by accident, not by design.** It
+holds because the name is specific, but a screen that happens to have a `LeftSide` would
+be rearranged without anyone having decided it should be.
+
+What the other five actually look like with a 19-wide grid is **not verified**. The panel
+has a `ScrollRect`, so a horizontal scrollbar is likelier than a clip -- but whether that
+ScrollRect permits horizontal scrolling is serialized prefab data, which is the whole
+reason `StashMeasure` exists. Do not write down an answer read off the assembly here;
+open a trader and look. The client log will carry the `cannot widen` line, which is the
+cheap confirmation that the postfix fires there at all.
+
+Worth doing one day, and the shape is known: the same two RectTransforms against whatever
+each screen calls its left half. `StashWiden` already takes the panel and finds its
+neighbour by name, so it wants a per-screen neighbour name rather than the constant
+`LeftSideName`, plus a `CHECK` line per screen so the outcome is measured rather than
+argued. **Not built.**
+
+The items question that came with it has a cleaner answer: **nothing outside the stash
+grid is touched on any screen.** The server iterates the five ids in `StashLadder.Rungs`
+and no other template; `ProfileStore` only reads nodes whose `parentId` is the stash or
+the sorting table, so a backpack's contents carry their own parent and are never read,
+never counted and never moved.
+
 
 ## Uninstall is the weak point -- verified the hard way, 2026-09-21
 
