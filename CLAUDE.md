@@ -120,11 +120,17 @@ The profile path comes from `SaveServer`'s private `profileFilepath` where it ca
 reflected, falling back to `AppContext.BaseDirectory` + `user/profiles` -- the literal
 `SaveServer.RemoveProfile` itself uses.
 
-### Why the game's rescue does not fire (settled, third attempt)
+### The game's rescue DOES fire -- observed 2026-09-22, against three prior readings
 
-This was got wrong twice. 0.3.0 said the rescue works. The first correction said the
-Sorting Table "has a 0x0 grid" as though it were incapable. Both were sloppy; the real
-answer is **timing**, and it is now traced end to end:
+**The user deleted the mod, started the game, and the out-of-bounds items were on the
+Sorting Table.** That is direct observation and it outranks everything below, which was
+all read off the assembly.
+
+The history is worth keeping because the claim has now flipped four times: 0.3.0 said
+the rescue works; the first correction said the Sorting Table "has a 0x0 grid" as though
+it were incapable; the third pass said the grid is growable but unsized at rescue time,
+so the rescue loses the race. That third reading is below, and it is still the best
+explanation of the *mechanism* -- but its conclusion was wrong in practice:
 
 - `MainMenuShowOperation.MoveBrokenItemsToSortingTable` gathers `OverlappingItems` +
   `OutOfBoundsItems` and calls `Grid.FindFreeSpace` on the Sorting Table.
@@ -142,9 +148,24 @@ answer is **timing**, and it is now traced end to end:
   true here) -- but it only runs when the player opens that window, which is after the
   main-menu rescue.
 
-Net: on the launch after the mod is removed, the rescue logs `Cannot find free space on
-sorting table for a bad item` per item and skips. It might succeed on a later main-menu
-load in a session where the Sorting Table window was opened first. Not plannable.
+That analysis predicts a failure and the game delivers a rescue, so something sizes the
+grid before `FindFreeSpace` runs. The likeliest candidate is the escape hatch the third
+pass already noted and then dismissed: **`MainMenuShowOperation` runs on every return to
+the menu, not only at launch**, so once `SortingTableWindow.ShowGrid` has sized the grid
+to 7x7 in that session, every later main-menu load has a sized table to place into. Any
+profile whose owner has ever opened the Sorting Table would then be rescued. **Not
+confirmed** -- confirming it wants the client log (a successful move vs `Cannot find free
+space on sorting table for a bad item`) and a cold launch on a profile that has never
+opened the window.
+
+What to write down for players: **the rescue works**, check the Sorting Table first, and
+the clean uninstall is still worth doing because it packs items back into the *stash*
+rather than dumping a stash's worth onto a 7-wide table.
+
+The old lesson here was "a method named for what it intends is not evidence it succeeds".
+The new one is its mirror: **an IL trace that predicts failure is not evidence of failure
+either.** Both readings were confident, both went into the mod page, and the only thing
+that ever settled it was starting the game.
 
 ### What 0.4.0 does instead
 
@@ -378,13 +399,14 @@ game and guessing at it.
   than 2580; 40 columns fits a 3440x1440 canvas exactly and 41 does not. The test
   asserting the claim failed, which is the only reason it was found. Write the assertion
   even when the claim feels obvious.
-- **Three passes to get the Sorting Table right, and the first two were confident.**
-  "The rescue works", then "the Sorting Table has a 0x0 grid so it cannot hold
-  anything", then finally the truth: the zeroes are *stretch flags*
-  (`GridSerializer.Deserialize` passes `cellsH == 0` / `cellsV == 0` straight into
-  `Grid..ctor`), the grid is growable, and what actually defeats the rescue is that
-  nothing has sized it yet at that moment. A magic-looking constant in a template is
-  worth chasing to its deserializer before concluding anything about it.
+- **Four passes on the Sorting Table, three of them confident and wrong, and the one
+  that settled it was starting the game.** "The rescue works", then "the grid is 0x0 so
+  it cannot hold anything", then "the zeroes are stretch flags so it is growable but
+  unsized at rescue time, therefore it fails" -- and then the user deleted the mod,
+  launched, and found the items on the Sorting Table. The stretch-flag reading is still
+  right and worth keeping (a magic-looking constant is worth chasing to its
+  deserializer); the conclusion drawn from it was not. **Three rounds of IL was less
+  evidence than one launch.**
 - **A method named for what it intends is not evidence it succeeds.**
   `MoveBrokenItemsToSortingTable` was read as proof that stranded items get rescued,
   and that went into the README and into an answer to the user. Reading the rest of
@@ -464,9 +486,11 @@ game and guessing at it.
 ## The residual risk, and why it stops there
 
 Deleting the mod without first setting `columns` to 10 cannot be prevented -- after the
-DLLs are gone nothing of ours runs, and the game's own rescue does not fire (see above).
-That is a hard constraint, not a gap to close. What can be done is make it reversible and
-make the reversal outlive the mod:
+DLLs are gone nothing of ours runs. That is a hard constraint, not a gap to close, but it
+is a far smaller one than these notes assumed: **the game's own rescue does fire** and
+puts the stranded items on the Sorting Table (see above). The clean uninstall is still
+the better path, because it packs items back into the *stash* instead of leaving a
+stash's worth on a 7-wide table. Beyond that, the reversal is made to outlive the mod:
 
 - Nothing is ever deleted. The SPT server has no out-of-bounds concept and never prunes.
 - Reinstalling at the same `columns` restores everything exactly.
@@ -744,10 +768,12 @@ Three facts that decide the design:
 
 - **Nothing of ours runs after the files are gone.** No shutdown hook, no uninstall
   event. Whatever has to happen on removal happens *before* deletion or not at all.
-- **SPT does not heal it.** `ProfileFixerService` handles circular parent references,
-  orphaned insurance and dangling counters -- there is nothing for out-of-bounds grid
-  positions. Confirmed by observation: items sat at x=12 across several server starts
-  and SPT never touched them.
+- **The *server* does not heal it, but the *client* does.** `ProfileFixerService` handles
+  circular parent references, orphaned insurance and dangling counters -- there is
+  nothing for out-of-bounds grid positions, and items sat at x=12 across several server
+  starts untouched. That was read as "nothing rescues them", which was wrong: the rescue
+  is client-side, at the main menu, and on 2026-09-22 it was observed working. See
+  the rescue section above.
 - **Nothing is lost.** SPT has no out-of-bounds concept and never prunes, so the items
   are still in the profile at their old coordinates. Reinstalling brings them back;
   `repair-stash.ps1` packs them home without the mod.

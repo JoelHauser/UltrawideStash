@@ -7,91 +7,92 @@
   changes what a player sees, change both.
 
   Before posting: drop a screenshot in where the comment says, and fill the page's
-  short-description field with something like --
-    "Widens the stash to fill an ultrawide monitor. Sizes itself to your screen;
-     does nothing on 16:9."
+  short-description field with --
+    "ULTRAWIDE ONLY. Widens the stash to fill a 21:9 or 32:9 monitor. Does nothing
+     on 16:9."
 -->
 
-Makes Tarkov's stash wider than 10 columns, so it fills the horizontal space an ultrawide
-monitor has and a 16:9 one doesn't. A 3440x1440 screen has around **660 logical pixels
-sitting empty** beside the stash. This puts your stash in it.
+# ⚠️ ULTRAWIDE MONITORS ONLY
+
+**If your monitor is 16:9 — 1080p, 1440p or 4K — this mod will do nothing for you.**
+Tarkov's menu scales by height, so every 16:9 screen has exactly the same width to work
+with and none of it is spare. 16:10 is the same story. You need a screen wider than 16:9
+(21:9 or 32:9) for there to be any room to fill.
+
+---
+
+Your stash is 10 columns wide and there are a few hundred pixels sitting empty beside it
+on an ultrawide. This widens the stash panel and fills them.
+
+On a 3440x1440 screen that's **10x68 → 19x36** — same capacity, roughly half the
+scrolling.
 
 <!-- screenshot goes here -->
 
-## Read this first if you're on 16:9
-
-**On a 16:9 monitor this does nothing by default, and that's correct.** EFT scales its
-menu by height alone, so 1080p, 1440p and 4K all get a canvas exactly 1920 units wide —
-none of them have room to spare. Only a wider-than-16:9 screen gains any.
-
-| Screen | Spare width | Extra columns |
-| --- | --- | --- |
-| 1920x1080 / 2560x1440 / 3840x2160 | none | — |
-| 2560x1080 | 640 px | ~10 |
-| 3440x1440 | 660 px | ~10 |
-| 5120x1440 | 1920 px | ~30 |
-
-## What it does
-
-- **Sizes itself to your screen.** The default is `"auto"`. A bundled client plugin
-  measures your real stash panel and writes down what fits; the server uses it. Ask for
-  more than fits and it's clamped and logged — a too-wide grid gets *clipped*, not
-  shrunk, and clipped columns look exactly like lost items.
-- **Same capacity by default.** The stash gets wider and shorter — less scrolling, not
-  more storage. Set `compensateRows` to `false` if you'd rather keep every row.
-- **Every edition.** Standard through Unheard, and the hideout stash upgrades are handled
-  — upgrading can never shorten your stash.
-- **Your items stay put.** Nothing is ever deleted, rows are never cut below what you're
-  actually storing, and your profile is backed up before any edit.
+| Your screen | You get |
+| --- | --- |
+| 1920x1080, 2560x1440, 3840x2160 (16:9) | 10 columns — nothing changes |
+| 2560x1080, 3440x1440 (21:9) | 19 columns |
+| 5120x1440 (32:9) | 39 columns |
 
 ## Install
 
-Unzip over your SPT root. Two files:
+Unzip over your SPT folder. Works straight away — no setup, no config needed.
 
-- `SPT_Runtime/user/mods/UltrawideStash/` — sets the width
-- `BepInEx/plugins/UltrawideStash.Probe.dll` — measures your screen
+Two files go in: the server mod (`SPT_Runtime/user/mods/UltrawideStash/`) sets the width,
+the plugin (`BepInEx/plugins/`) widens the panel to fit it.
 
-Start the game, open your stash once, then **restart the server**. `"auto"` now knows
-what fits.
+**Start the server before the game**, as usual.
 
-## Config
+Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 
-`SPT_Runtime/user/mods/UltrawideStash/ultrawidestash.config.json`
+## Good to know
 
-```json
-{
-  "columns": "auto",
-  "screenWidth": 1920,
-  "screenHeight": 1080,
-  "ignoreMeasurement": false,
-  "compensateRows": true,
-  "verbose": false
-}
-```
+- **Same capacity by default.** Wider and shorter, so you scroll less — not extra storage.
+  Set `compensateRows` to `false` in the config if you'd rather keep every row.
+- **Works on every edition**, and hideout stash upgrades are handled.
+- **Your items are safe.** Nothing is deleted, anything that would end up off the edge of
+  a resized stash is moved back in for you, and your profile is backed up first.
+- It sizes itself to your screen automatically. You can set `columns` by hand in
+  `ultrawidestash.config.json`, but it's capped at what your monitor can actually show.
 
-| Setting | What it does |
-| --- | --- |
-| `columns` | `"auto"`, or a number. Vanilla is 10. Clamped to what your screen can show. |
-| `screenWidth` / `screenHeight` | Only used before anything has been measured. Handy on a dedicated server. |
-| `ignoreMeasurement` | `true` uses `columns` exactly as written, no ceiling. You're on your own. |
-| `compensateRows` | `true` holds total capacity at vanilla. `false` keeps every row. |
+# Uninstalling — set `columns` to 10 first
 
-## Uninstalling
+**Your items are safe either way — but there is a clean way and a messy way.**
 
-**Don't just delete it.** Set `"columns": 10` (the number, not `"auto"`), start the
-server once so everything is packed back into a vanilla stash, then delete the files.
-A `HOW-TO-UNINSTALL.txt` is written into the mod folder, and a standalone PowerShell
-recovery script ships alongside if you forget.
+If you just delete the files, your stash snaps back to 10 columns and anything in columns
+11+ is out of bounds. **The game moves those to your sorting table** when you next load
+into the menu, so check there first — that is where they'll be. Anything it doesn't
+catch is still sitting in your profile at its old coordinates, untouched; SPT never
+deletes or prunes out-of-bounds items.
+
+The clean way puts them back in the stash instead of leaving you to re-sort a full
+sorting table:
+
+1. Open `SPT_Runtime/user/mods/UltrawideStash/ultrawidestash.config.json` and set
+   `"columns": 10` — the number `10`, not `"auto"`.
+2. **Start the server once** and let it finish loading.
+3. Now delete the two files.
+
+Step 2 is where the mod does the work for you:
+
+- **Your profile is backed up first**, to a timestamped `.bak` beside it, before a single
+  item is moved.
+- Items are packed back into the 10-wide stash. Only what genuinely won't fit goes to the
+  sorting table — which the mod never touches, so it survives the uninstall.
+- It's all-or-nothing per stash. If something can't be placed, nothing is changed at all.
+
+### If you already deleted it
+
+1. **Look at your sorting table** — most of it should be there.
+2. Anything missing is still in your profile. Either reinstall the mod and follow the
+   three steps above, or run `repair-stash.ps1` from the download — plain PowerShell, no
+   mod and no matching SPT version needed. It backs up first, and shows you what it would
+   do before you let it write.
 
 ## Compatibility
 
-Works with EFT's own auto-sort, **UI Fixes**, and **Advanced Stash Sorting** — none of
-them hard-code a stash width. Established by reading their source, not by testing.
+Fine with auto-sort, **UI Fixes** and **Advanced Stash Sorting**.
 
-## ⚠️ Untested in-game
-
-Built entirely from static analysis of the game client and SPT's database. The logic has
-**144 automated tests** behind it, but none of this has run in a live game. It writes to
-your profile. **Back up `SPT_Runtime/user/profiles` first.**
-
-Built for **SPT 4.1.5** / EFT 0.16.9.5.40743.
+For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440. Back up `SPT_Runtime/user/profiles`
+before your first run — it edits your profile.

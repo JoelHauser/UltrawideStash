@@ -311,10 +311,13 @@ It refuses to narrow a stash, so it can never undo another mod's widening.
 The short version: **nothing this mod does deletes an item, and the game has its own
 recovery for the one bad case.**
 
-### Why the game's own rescue does not save you
+### The game's own rescue — it does fire, and this section had it wrong three times
 
-EFT does have a recovery for items that fall outside a grid, and it is reasonable to
-expect it to handle this. It will not, and the reason is timing rather than capacity.
+**Observed 2026-09-22: the mod was deleted, the game started, and the out-of-bounds items
+were on the Sorting Table.** Everything that follows is the static reading, which
+predicted the opposite; it is kept because the mechanism it describes is still the best
+account of *how* the rescue can fail, and because the sequence of confident wrong answers
+is the point.
 
 `MainMenuShowOperation.MoveBrokenItemsToSortingTable` runs on every main-menu load. It
 gathers each grid's `OverlappingItems` and `OutOfBoundsItems`, calls `Grid.FindFreeSpace`
@@ -322,19 +325,23 @@ on the **Sorting Table**, and moves what it can there.
 
 The Sorting Table's template declares its grid as `cellsH: 0, cellsV: 0`, and
 `GridSerializer.Deserialize` turns those zeroes into **stretch flags** — a zero dimension
-means "growable". So the grid is not incapable; it is simply **unsized until something
-sizes it**, and the only thing that does is `SortingTableWindow.ShowGrid` calling
-`SortingTable.ClampSize` — that is, you opening the Sorting Table window.
-
-The rescue runs before that. And it does not size the grid itself:
+means "growable". So the grid is not incapable; it is **unsized until something sizes
+it**, and the only thing that does is `SortingTableWindow.ShowGrid` calling
+`SortingTable.ClampSize`, i.e. you opening the Sorting Table window.
 `FindFreeSpace` → `FindFreeSpaceInGrid` → `GetFreeLocation` is a pure search over the
-current dimensions, which are still `0 x 0`. Both loops have nothing to iterate, it
-returns null, and the item is skipped with
+current dimensions and grows nothing, so at `0 x 0` it returns null and logs
 `Cannot find free space on sorting table for a bad item`.
 
-So on the launch where you would need it — the first one after removing the mod — it does
-nothing. It might work on some later main-menu load in a session where you happened to
-open the Sorting Table first. That is not something to plan around.
+From which this section concluded the rescue could not help on the launch that mattered.
+The game disagreed. The likeliest reconciliation is the escape hatch that was noted and
+then waved away: **the rescue runs on every return to the menu, not only at launch**, so
+once `ShowGrid` has sized the table to 7x7, every later main-menu load has somewhere to
+put things — which covers any profile whose owner has ever opened that window. Not
+confirmed; confirming it needs the client log and a cold launch on a profile that never
+has.
+
+Plan on the clean uninstall anyway. Not because the rescue fails, but because it empties
+a wide stash onto a 7-wide table, and the mod can put those items back where they were.
 
 ### The mod keeps your items reachable itself
 
