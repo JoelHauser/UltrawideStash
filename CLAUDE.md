@@ -332,7 +332,7 @@ src/UltrawideStash.Probe/             net472, BepInEx -- changes nothing in the 
   Companions.cs       which stash-touching plugins are loaded, for the report
   ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
 
-tests/UltrawideStash.Server.Tests/    xunit, 144 tests
+tests/UltrawideStash.Server.Tests/    xunit, 162 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
   RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
@@ -665,6 +665,16 @@ stash, and that the next start logs `auto: N columns, from the probe's measureme
 **Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
 and write the client-side width fix against it. Do not write UI patches before that log
 exists -- the anchoring is unknowable from here, and a guess costs a round trip.
+
+### 1.0.0, released 2026-09-22
+
+Tagged `v1.0.0` and published to GitHub Releases with `UltrawideStash_V1.0.0.zip`. No
+code change from 0.9.3 -- the version bump is the release. What earned it was the run on
+a live 4.1.6 install at 3440x1440 and the documentation catching up with it: the mod page
+now leads with ultrawide-only, says plainly that a profile rewrite can lose items, and
+records that the game's Sorting Table rescue does fire.
+
+Packed clean at 0 warnings, 162 logic tests, 19 database checks, references still clean.
 
 
 ## Verified in game, 2026-09-21
