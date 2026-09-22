@@ -198,10 +198,40 @@ public class StashWidener(
                     : string.Empty));
         }
 
+        // The first run after an install, where nothing has measured the panel yet.
+        //
+        // This is the single most confusing state the mod has: the player installs a
+        // mod called Ultrawide Stash, starts the server, and it reports a vanilla
+        // 10-column stash with no explanation. It is not a failure -- the width comes
+        // from the client measuring its own panel, which cannot have happened before
+        // the client has run -- but saying so quietly, in the same tone as a normal
+        // result, reads as the mod not working.
+        //
+        // Warning rather than Info because the player has to do something.
+        if (measurement is null && applied == 0 && choice.IsNoOp)
+        {
+            logger.Warning(
+                "[UltrawideStash] NOT WIDENED YET -- expected on a first run, and one more "
+                + "step finishes it. The width is measured from your real stash panel, so the "
+                + "client has to run once before the server can know it.");
+            logger.Warning(
+                "[UltrawideStash]   1. Check WidenStashPanel is true in BepInEx/config/"
+                + "com.mybutthasarash.ultrawidestash.cfg");
+            logger.Warning(
+                "[UltrawideStash]   2. Start the game and open your stash once.");
+            logger.Warning(
+                "[UltrawideStash]   3. Quit, restart this server, and the stash will be its "
+                + "full width.");
+            logger.Warning(
+                "[UltrawideStash] If step 1 is false the panel is never widened, the probe "
+                + "measures the vanilla one, and every later start reads 10 columns back "
+                + "from that measurement.");
+        }
+
         // Explain a do-nothing run, but only when it really did nothing. A run that
         // clamped an over-wide config back to vanilla also changes no template, and
         // saying "no change was made" there would contradict the relocation count.
-        if (applied == 0 && moved == 0 && choice.IsNoOp)
+        if (measurement is not null && applied == 0 && moved == 0 && choice.IsNoOp)
         {
             logger.Info(
                 "[UltrawideStash] No change was made, and on a 16:9 screen that is the correct "

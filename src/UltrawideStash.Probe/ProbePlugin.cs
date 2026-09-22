@@ -36,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "0.9.0";
+        public const string PluginVersion = "0.9.1";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -56,10 +56,14 @@ namespace UltrawideStash.Probe
         /// <summary>
         /// Whether to take the slack out of the gear side and give it to the stash.
         ///
-        /// Off by default. This is the one thing the plugin does that changes what is
-        /// on screen, and a mod that rearranges the inventory screen the first time it
-        /// loads, without being asked, is a mod people uninstall. Turning it off puts
-        /// the screen back on the next open.
+        /// On by default, which reverses the original decision. Off was defensible in
+        /// the abstract -- rearranging someone's inventory screen uninvited is rude --
+        /// but the mod is called Ultrawide Stash and nobody installs it hoping it does
+        /// nothing. Worse, off is not merely inert: the panel stays vanilla, so the
+        /// probe measures a vanilla panel, writes 10 columns, and every later server
+        /// start reads that back. The mod then looks broken rather than disabled.
+        ///
+        /// Setting it false puts the screen back on the next open.
         /// </summary>
         private ConfigEntry<bool> _widen;
 
@@ -78,9 +82,10 @@ namespace UltrawideStash.Probe
             _widen = Config.Bind(
                 "Layout",
                 "WidenStashPanel",
-                false,
+                true,
                 "Narrow the gear side of the inventory screen and give the width to the "
-                + "stash panel. Off by default because it rearranges the screen.");
+                + "stash panel. This is what the mod is for; set it false to leave the "
+                + "screen alone.");
 
             _reserve = Config.Bind(
                 "Layout",
@@ -111,8 +116,11 @@ namespace UltrawideStash.Probe
                 Say(_widen.Value
                     ? "armed. Open your stash: it gets one measurement block, and the panel "
                       + "gets widened."
-                    : "probe armed (read-only). Open your stash and this log gets one "
-                      + "measurement block. Set WidenStashPanel to true to widen it.");
+                    : "armed, but WidenStashPanel is false, so the panel will be left alone "
+                      + "and measured at its vanilla width. The measurement handed to the "
+                      + "server will say 10 columns, and the server will keep reading that "
+                      + "back on every start. Set WidenStashPanel to true if you wanted a "
+                      + "wider stash.");
             }
             catch (Exception e)
             {
