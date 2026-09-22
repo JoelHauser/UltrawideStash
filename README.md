@@ -469,14 +469,17 @@ What to read from it:
 ## Building
 
 ```
-scripts\pack.ps1 -SPTPath C:\HUH            # build, test, zip
-scripts\pack.ps1 -SPTPath C:\HUH -Install   # and install
-scripts\test-database.ps1 -SPTPath C:\HUH   # stash ids against a real database
-scripts\repair-stash.ps1 -SPTPath C:\HUH    # standalone stash repair (report only)
+scripts\pack.ps1                 # build, test, zip
+scripts\pack.ps1 -Install        # and install
+scripts\test-database.ps1        # stash ids against a real database
+scripts\repair-stash.ps1         # standalone stash repair (report only)
 dotnet test tests\UltrawideStash.Server.Tests
 ```
 
-Run those through PowerShell, not Bash — `C:\HUH` gets mangled to `C:HUH` otherwise.
+Each finds the SPT install by itself: `$env:SPT_PATH` if set, otherwise the nearest
+install at or above the script or the current directory. Pass `-SPTPath <path>` to
+override. Run them through PowerShell, not Bash — a backslash path gets mangled
+otherwise.
 
 The probe references **no game assembly**. The `Assembly-CSharp.dll` in `Managed` is not
 the one the game runs — the SPT Launcher applies a delta at startup that renames

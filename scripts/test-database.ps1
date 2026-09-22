@@ -12,18 +12,23 @@
     the mod's documentation claims. It also checks that no OTHER stash-shaped item
     was missed.
 
-    Run through PowerShell, not Bash -- the C:\HUH path mangling trap that bites the
+    Run through PowerShell, not Bash -- a backslash path gets mangled otherwise, the
     sibling repos applies here too.
 
 .EXAMPLE
-    scripts\test-database.ps1 -SPTPath C:\HUH
+    scripts\test-database.ps1
+    scripts\test-database.ps1 -SPTPath D:\Games\SPT
 #>
 [CmdletBinding()]
 param(
-    [string] $SPTPath = 'C:\HUH'
+    [string] $SPTPath
 )
 
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'SptPath.ps1')
+
+$SPTPath = Resolve-SptPath -SPTPath $SPTPath
 
 $script:Passed = 0
 $script:Failed = 0

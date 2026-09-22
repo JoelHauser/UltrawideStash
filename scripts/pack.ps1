@@ -12,21 +12,26 @@
     disagree, because a zip whose name does not match the DLL it contains is the
     thing that makes a bug report unanswerable.
 
-    Run through PowerShell, not Bash -- the C:\HUH path mangling trap that bites the
+    Run through PowerShell, not Bash -- a backslash path gets mangled otherwise, the
     sibling repos applies here too.
 
 .EXAMPLE
-    scripts\pack.ps1 -SPTPath C:\HUH
-    scripts\pack.ps1 -SPTPath C:\HUH -Install
+    scripts\pack.ps1
+    scripts\pack.ps1 -SPTPath D:\Games\SPT
+    scripts\pack.ps1 -Install
 #>
 [CmdletBinding()]
 param(
-    [string] $SPTPath = 'C:\HUH',
+    [string] $SPTPath,
     [switch] $Install,
     [switch] $SkipTests
 )
 
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'SptPath.ps1')
+
+$SPTPath = Resolve-SptPath -SPTPath $SPTPath
 
 $root = Split-Path -Parent $PSScriptRoot
 $serverProj = Join-Path $root 'src\UltrawideStash.Server\UltrawideStash.Server.csproj'

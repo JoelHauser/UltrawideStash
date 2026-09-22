@@ -15,10 +15,15 @@
     It reports by default and only writes when given -Apply. Every write is preceded by a
     timestamped .bak beside the profile.
 
-    Run through PowerShell, not Bash -- the C:\HUH path mangling trap applies here too.
+    Run through PowerShell, not Bash -- a backslash path gets mangled otherwise.
 
 .PARAMETER SPTPath
     An SPT install root. Every profile under SPT_Runtime\user\profiles is examined.
+
+    Optional. Left out, the script checks $env:SPT_PATH, then walks up from its own
+    location, then up from the current directory. The mod installs this to
+    <SPT>\SPT_Runtime\user\mods\UltrawideStash, so running it where it sits needs no
+    argument at all.
 
 .PARAMETER Profile
     A single profile .json instead of a whole install.
@@ -30,9 +35,10 @@
     Actually write. Without it, nothing is changed and you just get the report.
 
 .EXAMPLE
-    scripts\repair-stash.ps1 -SPTPath C:\HUH
-    scripts\repair-stash.ps1 -SPTPath C:\HUH -Apply
-    scripts\repair-stash.ps1 -Profile "C:\HUH\SPT_Runtime\user\profiles\abc.json" -Apply
+    .\repair-stash.ps1
+    .\repair-stash.ps1 -Apply
+    .\repair-stash.ps1 -SPTPath D:\Games\SPT -Apply
+    .\repair-stash.ps1 -Profile "D:\Games\SPT\SPT_Runtime\user\profiles\abc.json" -Apply
 #>
 [CmdletBinding()]
 param(
@@ -43,6 +49,81 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Finding the install.
+#
+# Deliberately duplicated from scripts\SptPath.ps1 rather than dot-sourced. This file
+# ships inside the mod folder and its whole purpose is to still work when the mod is
+# gone -- on a newer SPT, on someone else's machine, years later. A dependency on a
+# sibling file is exactly what would break that.
+
+function Test-SptRoot {
+    param([string] $Path)
+
+    if (-not $Path) { return $false }
+
+    return Test-Path (Join-Path $Path 'SPT_Runtime\SPT_Data')
+}
+
+function Find-SptRootUpward {
+    param([string] $Start)
+
+    if (-not $Start) { return $null }
+
+    $resolved = Resolve-Path -LiteralPath $Start -ErrorAction SilentlyContinue
+
+    if (-not $resolved) { return $null }
+
+    $current = Get-Item -LiteralPath $resolved
+
+    if (-not $current.PSIsContainer) { $current = $current.Directory }
+
+    while ($current) {
+        if (Test-SptRoot $current.FullName) { return $current.FullName }
+
+        $current = $current.Parent
+    }
+
+    return $null
+}
+
+function Resolve-SptRoot {
+    param([string] $Path)
+
+    if ($Path) {
+        if (-not (Test-SptRoot $Path)) {
+            throw "'$Path' is not an SPT install root -- no SPT_Runtime\SPT_Data under it."
+        }
+
+        return (Resolve-Path -LiteralPath $Path).Path
+    }
+
+    if ($env:SPT_PATH -and (Test-SptRoot $env:SPT_PATH)) {
+        return (Resolve-Path -LiteralPath $env:SPT_PATH).Path
+    }
+
+    # Installed location is <SPT>\SPT_Runtime\user\mods\UltrawideStash, so this finds
+    # the install the mod was installed into.
+    $found = Find-SptRootUpward $PSScriptRoot
+
+    if (-not $found) { $found = Find-SptRootUpward (Get-Location).Path }
+
+    if (-not $found) {
+        throw @'
+Could not find an SPT install.
+
+Point at one explicitly:
+    -SPTPath <path to the folder holding EscapeFromTarkov.exe>
+
+Or set it once for this shell:
+    $env:SPT_PATH = '<path>'
+
+Or run this script from inside an SPT install and it will find it by itself.
+'@
+    }
+
+    return $found
+}
 
 # The five stashes a player can own, and their vanilla heights. Matches
 # StashWidener.PlayerStashes; verified against items.json by test-database.ps1.
@@ -63,11 +144,13 @@ function Get-Profiles {
         return @($Profile)
     }
 
-    if (-not $SPTPath) { throw "Pass -SPTPath or -Profile." }
+    $root = Resolve-SptRoot $SPTPath
 
-    $dir = Join-Path $SPTPath 'SPT_Runtime\user\profiles'
+    $dir = Join-Path $root 'SPT_Runtime\user\profiles'
 
     if (-not (Test-Path $dir)) { throw "No profiles folder at '$dir'." }
+
+    Write-Host "SPT install: $root" -ForegroundColor DarkGray
 
     return @(Get-ChildItem $dir -Filter '*.json' | Select-Object -ExpandProperty FullName)
 }
