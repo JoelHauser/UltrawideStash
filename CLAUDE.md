@@ -325,12 +325,14 @@ src/UltrawideStash.Server/            .NET 10, SPTarkov.Server.Core
   ProfileStore.cs     reads a profile's stash off disk; writes moves back, with backup
   StashWidener.cs     IOnLoad at PostLoad; the only file that touches SPT or the database
 
-src/UltrawideStash.Probe/             net472, BepInEx -- changes nothing in the game
+src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the menu, never in raid
   GameTypes.cs        every game member, resolved by patched name, in one place
   StashMeasure.cs     the walk up the RectTransform chain, and the report
+  StashWiden.cs       narrows LeftSide, grows Stash Panel, and puts both back for a raid
   MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
-  ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
+  ProbePlugin.cs      BepInPlugin; postfix on SimpleStashPanel.Show, prefix on
+                      ItemsPanel.Show, both gated on the game's inRaid flag
 
 tests/UltrawideStash.Server.Tests/    xunit, 162 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
@@ -676,6 +678,14 @@ records that the game's Sorting Table rescue does fire.
 
 Packed clean at 0 warnings, 162 logic tests, 19 database checks, references still clean.
 
+**Re-released the same day with the in-raid fix.** The user reported the widening
+breaking Loot In Vicinity in raid (see *Never in raid*) and asked for 1.0.0 to be
+overwritten rather than a 1.0.1 cut. So the fix went in at version 1.0.0, the `v1.0.0` tag
+was moved to the new commit and force-pushed, and the release zip and notes were replaced
+in place. Anyone who downloaded 1.0.0 before that has the build that widens in raid, and
+both zips say 1.0.0 -- the BepInEx log tells them apart: only the re-release ever prints
+`in raid: inventory screen put back to vanilla`.
+
 
 ## Verified in game, 2026-09-21
 
@@ -913,3 +923,57 @@ Two things follow:
 Non-Windows, a dedicated server, or an account that has never run EFT all fall back to
 the declared size in the config, which is 1920x1080 and yields vanilla -- the safe answer
 when the screen is genuinely unknown.
+
+
+## Never in raid (in 1.0.0 as re-released)
+
+Built as 0.9.4, then folded into 1.0.0 rather than shipped separately -- see the 1.0.0
+entry under *Where this was left off*.
+
+Reported 2026-09-22: the widening showed up in raid and broke **Loot In Vicinity**
+(Softwyx, `Softwyx-LootInVicinity.dll`, 3.0.0), whose Nearby Items column is the
+right-hand panel of the in-raid inventory.
+
+Read out of its decompiled source (ilspycmd), not guessed: it builds a fake stash with a
+fixed `10 x 12`, horizontally non-stretching `VicinityStashGrid` and shows it with
+`simpleStashPanel.Show(stash, ..., inRaid: true, ...)`. **The server's template edit plays
+no part** -- its grid never reads a stash template. The client plugin was the whole cause:
+
+- The postfix on `SimpleStashPanel.Show` widened on *every* call. Vanilla also calls it
+  with `inRaid: true` for a looted crate, so this was never LIV-specific.
+- The inventory screen is built once and kept. A panel widened at the hideout stash is
+  the same RectTransforms that come up on Tab in raid, crate or no crate.
+- The report could run on a raid screen and write its grid into
+  `ultrawidestash.measured.json` as though it were the stash.
+
+The fix uses the game's own flag rather than guessing from the grid:
+
+- `SimpleStashPanel.Show` and `ItemsPanel.Show` both take `bool inRaid`. `GameTypes`
+  finds it **by name and type**, and an argument that cannot be read counts as in raid.
+  `SimpleStashPanel`'s is required (the probe turns off without it); `ItemsPanel`'s is
+  optional and only covers the no-crate case.
+- In raid: no widening, no measurement, and `StashWiden.Restore()` puts `LeftSide.offsetMax`
+  and `Stash Panel.sizeDelta` back to the values `Remember` captured before the first
+  widening. Remembered once per widening, never over the top of a widened panel -- a
+  resolution change can widen twice, and recording then would lose vanilla.
+- Back in the menu the next stash open widens again: `Apply` finds the slack back.
+
+### What the first raid showed
+
+Ran once, 2026-09-22, on the live install with LIV loaded. The log has the widening at
+the hideout stash (`'LeftSide' 1866.0 -> 1272.0 px, stash panel 680.0 -> 1250.0 px`),
+then `in raid: inventory screen put back to vanilla, stash panel 680.0 px` on the first
+Tab in raid, and no `widened:` line after it. **The restore fires.**
+
+The user still read the Nearby Items screenshot as affected. Measured off it: panel
+~905 screen px = 680 canvas px at scale 1.333, grid 10 x 84 = 841 px. Both vanilla. What
+does look odd is the empty band under the grid, and that is LIV's own `10 x 12` grid
+stopping short of the panel's height -- it grows downward only as items are added. The
+user was asked which part looked wrong and offered an A/B (`WidenStashPanel = false`,
+same panel, compare). **Open until they answer**; do not write another fix without it.
+
+LIV 3.0.0 also fails two of its own patches at startup on 4.1.6
+(`VicinityItemUiQuickFindPatch`, `VicinityItemUiListedQuickFindPatch`: `IL Compile Error`,
+`OperationResult` vs `OperationResult<IItemOperationResult>` on
+`ItemUiContext.QuickFindAppropriatePlace`). Nothing to do with this mod, but it is the
+first thing to suspect for quick-move trouble from that panel.

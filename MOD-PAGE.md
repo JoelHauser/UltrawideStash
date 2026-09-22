@@ -58,6 +58,9 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - Items that no longer fit get packed back in; items that already fit are never shuffled.
 - Sizes itself to your screen. You can set `columns` by hand in
   `ultrawidestash.config.json`, capped at what your monitor can show.
+- **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
+  crates, bodies and loot panels are left alone. The stash widens again when you're back
+  in the menu.
 
 # Uninstalling — set `columns` to 10 first
 
@@ -74,6 +77,7 @@ PowerShell, no mod needed, shows you what it would do before writing).
 
 ## Compatibility
 
-Fine with auto-sort, **UI Fixes** and **Advanced Stash Sorting**.
+Fine with auto-sort, **UI Fixes**, **Advanced Stash Sorting** and **Loot In Vicinity**
+(the mod stays out of raid, so its Nearby Items panel is untouched).
 
 For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440.

@@ -126,6 +126,49 @@ namespace UltrawideStash.Probe
             {
                 Say("probe could not patch SimpleStashPanel.Show -- " + e.Message);
             }
+
+            // Separate from the patch above so that losing it costs only the no-crate
+            // raid case, not the whole plugin.
+            if (GameTypes.ItemsPanelShow == null || GameTypes.ItemsPanelShowInRaid < 0)
+            {
+                Say("ItemsPanel.Show not found -- a widened screen is only put back in raid "
+                    + "when a crate or the Nearby Items panel opens.");
+                return;
+            }
+
+            try
+            {
+                new Harmony(PluginGuid).Patch(
+                    GameTypes.ItemsPanelShow,
+                    prefix: new HarmonyMethod(
+                        AccessTools.Method(typeof(ProbePlugin), nameof(BeforeItemsShow))));
+            }
+            catch (Exception e)
+            {
+                Say("probe could not patch ItemsPanel.Show -- " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Runs as the inventory screen opens, in the menu or in raid.
+        ///
+        /// ## Why this has to put the screen back rather than just not widen it
+        ///
+        /// The inventory screen is built once and kept. Widen it at the hideout stash
+        /// and the same narrowed gear side and wide right-hand panel come up when Tab
+        /// is pressed in raid, where the right-hand panel holds crates, bodies and
+        /// Loot In Vicinity's Nearby Items instead of the stash. None of those are
+        /// the stash, and the mod has no business changing them.
+        /// </summary>
+        private static void BeforeItemsShow(object[] __args)
+        {
+            if (!GameTypes.InRaid(__args, GameTypes.ItemsPanelShowInRaid)) return;
+
+            _pending = null;
+
+            var said = StashWiden.Restore();
+
+            if (said != null) Say(said);
         }
 
         /// <summary>
@@ -139,9 +182,25 @@ namespace UltrawideStash.Probe
         ///
         /// The measurement is deferred because <c>Show</c> has not built the grids
         /// yet when it returns.
+        ///
+        /// In raid this panel draws a crate, or Loot In Vicinity's Nearby Items, not
+        /// the stash: nothing is widened and nothing is measured. A measurement taken
+        /// there would describe a raid screen and be handed to the server as though it
+        /// were the stash.
         /// </summary>
-        private static void AfterStashShow(MonoBehaviour __instance)
+        private static void AfterStashShow(MonoBehaviour __instance, object[] __args)
         {
+            if (GameTypes.InRaid(__args, GameTypes.SimpleStashPanelShowInRaid))
+            {
+                _pending = null;
+
+                var said = StashWiden.Restore();
+
+                if (said != null) Say(said);
+
+                return;
+            }
+
             // Resize here, in Show, so the panel is already its full width on the
             // first frame the player sees. Deferring this to Update costs one frame
             // at the vanilla width and the stash visibly snaps wider on every open.

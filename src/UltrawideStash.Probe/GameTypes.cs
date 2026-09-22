@@ -48,6 +48,30 @@ namespace UltrawideStash.Probe
         internal static MethodInfo SimpleStashPanelShow { get; private set; }
 
         /// <summary>
+        /// Where <c>inRaid</c> sits in <see cref="SimpleStashPanelShow"/>'s arguments.
+        ///
+        /// The same panel draws the stash in the menu and a looted crate in raid, and
+        /// Loot In Vicinity shows its Nearby Items grid through it too. This flag is
+        /// the game's own answer to which one it is, so the widening never has to
+        /// guess from the grid.
+        /// </summary>
+        internal static int SimpleStashPanelShowInRaid { get; private set; } = -1;
+
+        /// <summary>
+        /// <c>EFT.UI.ItemsPanel.Show(..., bool inRaid, ...)</c> -- the whole inventory
+        /// screen, called on every open in the menu and in raid.
+        ///
+        /// Optional. It is what puts the screen back when the inventory opens in raid
+        /// with no crate, where <see cref="SimpleStashPanelShow"/> never runs but a
+        /// widening done in the hideout would still be on screen. Without it, a crate
+        /// or Loot In Vicinity's panel opening still puts it back.
+        /// </summary>
+        internal static MethodInfo ItemsPanelShow { get; private set; }
+
+        /// <summary>Where <c>inRaid</c> sits in <see cref="ItemsPanelShow"/>'s arguments.</summary>
+        internal static int ItemsPanelShowInRaid { get; private set; } = -1;
+
+        /// <summary>
         /// <c>EFT.UI.DragAndDrop.GridView</c> -- one per grid drawn. The stash screen
         /// has one for the stash itself and more for any opened container.
         /// </summary>
@@ -110,6 +134,28 @@ namespace UltrawideStash.Probe
                     return;
                 }
 
+                SimpleStashPanelShowInRaid = InRaidIndex(SimpleStashPanelShow);
+
+                // Required. Without it the probe cannot tell the stash from a crate
+                // in raid, and widening a raid screen is exactly what must not happen.
+                if (SimpleStashPanelShowInRaid < 0)
+                {
+                    Fail("SimpleStashPanel.Show has no inRaid parameter");
+                    return;
+                }
+
+                var itemsPanel = AccessTools.TypeByName("EFT.UI.ItemsPanel");
+
+                if (itemsPanel != null)
+                {
+                    ItemsPanelShow = AccessTools.Method(itemsPanel, "Show");
+
+                    if (ItemsPanelShow != null)
+                    {
+                        ItemsPanelShowInRaid = InRaidIndex(ItemsPanelShow);
+                    }
+                }
+
                 GridView = AccessTools.TypeByName("EFT.UI.DragAndDrop.GridView");
 
                 if (GridView == null)
@@ -153,6 +199,39 @@ namespace UltrawideStash.Probe
             {
                 Fail(e.Message);
             }
+        }
+
+        /// <summary>
+        /// The position of the <c>bool inRaid</c> parameter, or -1. Found by name and
+        /// type rather than by position, so a reordered signature is caught instead of
+        /// read as some other flag.
+        /// </summary>
+        private static int InRaidIndex(MethodInfo method)
+        {
+            var parameters = method.GetParameters();
+
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                if (parameters[i].ParameterType == typeof(bool)
+                    && string.Equals(parameters[i].Name, "inRaid", StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Whether a patched call's <c>inRaid</c> argument is true. An argument that
+        /// cannot be read counts as in raid: leaving a menu screen vanilla is harmless,
+        /// widening a raid screen is not.
+        /// </summary>
+        internal static bool InRaid(object[] args, int index)
+        {
+            if (args == null || index < 0 || index >= args.Length) return true;
+
+            return !(args[index] is bool inRaid) || inRaid;
         }
 
         private static void Fail(string why)

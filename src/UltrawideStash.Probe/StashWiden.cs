@@ -173,6 +173,8 @@ namespace UltrawideStash.Probe
 
             var before = cap.rect.width;
 
+            Remember(leftSide, cap);
+
             try
             {
                 // LeftSide stretches, so its width is the parent's less the two
@@ -212,6 +214,74 @@ namespace UltrawideStash.Probe
                 columns));
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// The two transforms <see cref="Apply"/> changed, and what they were before.
+        ///
+        /// Kept because the inventory screen is one object for the whole session: the
+        /// screen widened in the hideout is the same one opened in raid. Unity keeps
+        /// no copy of a RectTransform's previous values, so this is the only record of
+        /// what vanilla looked like.
+        /// </summary>
+        private static RectTransform _leftSide;
+
+        private static RectTransform _cap;
+
+        private static Vector2 _leftSideOffsetMax;
+
+        private static Vector2 _capSizeDelta;
+
+        /// <summary>
+        /// Record the untouched geometry, once per widening.
+        ///
+        /// Only when nothing is held for this panel yet: a resolution change can widen
+        /// an already-widened panel further, and recording then would overwrite the
+        /// vanilla values with widened ones and make them unrestorable.
+        /// </summary>
+        private static void Remember(RectTransform leftSide, RectTransform cap)
+        {
+            if (_cap == cap && _leftSide == leftSide) return;
+
+            _leftSide = leftSide;
+            _cap = cap;
+            _leftSideOffsetMax = leftSide.offsetMax;
+            _capSizeDelta = cap.sizeDelta;
+        }
+
+        /// <summary>
+        /// Put the screen back to the width the game built it at.
+        ///
+        /// Called whenever the inventory opens in raid. The next stash open in the
+        /// menu widens it again, because <see cref="Apply"/> finds the slack back.
+        /// </summary>
+        /// <returns>A line for the log, or null when there was nothing to undo.</returns>
+        internal static string Restore()
+        {
+            var cap = _cap;
+            var leftSide = _leftSide;
+
+            _cap = null;
+            _leftSide = null;
+
+            // Nothing widened, or destroyed with the screen -- and the screen that
+            // replaces it is built vanilla.
+            if (!cap || !leftSide) return null;
+
+            try
+            {
+                leftSide.offsetMax = _leftSideOffsetMax;
+                cap.sizeDelta = _capSizeDelta;
+            }
+            catch (Exception e)
+            {
+                return "could not put the stash panel back for the raid -- " + e.Message;
+            }
+
+            return string.Format(
+                "in raid: inventory screen put back to vanilla, stash panel {0:0.0} px. "
+                + "It widens again the next time the stash opens in the menu.",
+                cap.rect.width);
         }
 
         /// <summary>

@@ -83,7 +83,7 @@ is for.
 | | Goes to | Does |
 | --- | --- | --- |
 | `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width, and keeps stored items inside it |
-| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Measures the stash panel, logs it, and writes it down for the server. Changes nothing in the game |
+| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Widens the stash panel in the menu (never in raid), measures it, and writes it down for the server |
 | `repair-stash.ps1` | `SPT_Runtime/user/mods/UltrawideStash/` | Standalone recovery. Needs only PowerShell — not the mod |
 
 The server half also writes two files into its own folder on first start:
@@ -288,6 +288,16 @@ sorted before this mod could refuse to sort after it.
 So `compensateRows` rounds **up**: the grid is never smaller than vanilla. It overshoots
 by less than one row — 688 cells against 680 on an Edge of Darkness stash at 16 columns,
 about 1%. Two tests hold both ends of that.
+
+### Loot In Vicinity — compatible since the 1.0.0 re-release
+
+Its **Nearby Items** column is the right-hand panel of the in-raid inventory: a fake
+stash with a fixed 10x12 grid, shown through the same `SimpleStashPanel.Show` the probe
+patches. The first 1.0.0 build widened that panel in raid. The re-release reads the
+game's own `inRaid` argument on `SimpleStashPanel.Show` and `ItemsPanel.Show`: in raid it
+neither widens nor measures, and it puts a screen widened at the hideout stash back to
+vanilla before the raid inventory is drawn. The same fix covers vanilla crates and
+bodies, which go through the same panel.
 
 ### Stash Management Helper — listed, not audited
 
