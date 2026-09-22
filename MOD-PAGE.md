@@ -9,7 +9,7 @@
   Before posting: drop a screenshot in where the comment says, and fill the page's
   short-description field with --
     "ULTRAWIDE ONLY. Widens the stash to fill a 21:9 or 32:9 monitor. Does nothing
-     on 16:9."
+     on 16:9. Edits your profile -- back it up."
 -->
 
 # ⚠️ ULTRAWIDE MONITORS ONLY
@@ -35,6 +35,32 @@ scrolling.
 | 2560x1080, 3440x1440 (21:9) | 19 columns |
 | 5120x1440 (32:9) | 39 columns |
 
+## ⚠️ Back up your profile first
+
+**This mod edits your profile.** It has to — changing the shape of your stash means
+moving items that no longer fit. Read this before you install it.
+
+The risk is small but it is not zero:
+
+- **Nothing in the mod deletes an item**, and SPT itself has no concept of an
+  out-of-bounds item and never prunes one. So the expected worst case is an item in the
+  wrong place, not an item that stopped existing.
+- **But it rewrites your profile file**, and anything that rewrites a profile can damage
+  one — a shape the code doesn't expect, or a crash or power cut during the write. This
+  is a young mod and it has run on a small number of machines. **If it goes wrong you
+  could lose items, or a profile.**
+- What's in place: a **timestamped backup before every write**
+  (`<profile>.json.ultrawidestash-<date>.bak`, next to your profile), a temp file that
+  only replaces the real one once it's fully written, and all-or-nothing per stash — if
+  any item can't be placed, that stash isn't touched at all.
+
+**Copy `SPT_Runtime/user/profiles` somewhere safe before your first server start**, and
+keep that copy until you've played a few sessions. It costs you a few hundred KB.
+
+On a first install the server log should say **`0 item(s) relocated`** — widening a
+stash cannot strand anything, so there is nothing to move. If it says anything else on a
+plain widen, stop and check your stash before you play.
+
 ## Install
 
 Unzip over your SPT folder. Works straight away — no setup, no config needed.
@@ -51,8 +77,8 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - **Same capacity by default.** Wider and shorter, so you scroll less — not extra storage.
   Set `compensateRows` to `false` in the config if you'd rather keep every row.
 - **Works on every edition**, and hideout stash upgrades are handled.
-- **Your items are safe.** Nothing is deleted, anything that would end up off the edge of
-  a resized stash is moved back in for you, and your profile is backed up first.
+- **Items that no longer fit are moved back in for you**, biggest first, and items that
+  already fit are never shuffled. Nothing is deleted — but see the warning above.
 - It sizes itself to your screen automatically. You can set `columns` by hand in
   `ultrawidestash.config.json`, but it's capped at what your monitor can actually show.
 
@@ -94,5 +120,4 @@ Step 2 is where the mod does the work for you:
 
 Fine with auto-sort, **UI Fixes** and **Advanced Stash Sorting**.
 
-For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440. Back up `SPT_Runtime/user/profiles`
-before your first run — it edits your profile.
+For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440.
