@@ -142,6 +142,84 @@ public static class StashFit
     }
 
     /// <summary>
+    /// What the client's widening will leave room for, on a canvas this wide.
+    ///
+    /// ## Why the server does this arithmetic at all
+    ///
+    /// The width used to come only from the probe, which meant the first server start
+    /// after an install had nothing to go on and produced a vanilla stash. The player
+    /// then had to open the game, quit and restart the server before the mod did
+    /// anything -- a first run that looks broken.
+    ///
+    /// The probe is not actually needed to know the answer. The client's widening is
+    /// deterministic: it narrows LeftSide to a fixed reserve and gives the difference
+    /// to the stash panel. Given the canvas width, the result is arithmetic, and the
+    /// canvas width follows from the screen resolution, which the server can read
+    /// (see <see cref="ScreenProbe"/>). So the server predicts what the client will do
+    /// and sizes the grid to match it, on the very first start.
+    ///
+    /// ## The layout this mirrors
+    ///
+    /// Measured off a live 3440x1440 client. On a canvas of width C the inventory
+    /// screen is laid out as:
+    ///
+    /// <code>
+    /// 12 | LeftSide | 10 | Stash Panel 680 | 12        (12 + L + 10 + 680 + 12 = C)
+    /// </code>
+    ///
+    /// so LeftSide is <c>C - 714</c> -- 1866 at 2580, 1206 at 1920, both confirmed in
+    /// the logs. The client then narrows LeftSide to <see cref="GearReserveTotal"/>,
+    /// keeps <see cref="ExtraGapPixels"/> of the slack as clearance and gives the rest
+    /// to the panel, out of which the grid never gets <see cref="PanelChromePixels"/>
+    /// or the <see cref="ScrollSlackPixels"/> that keeps it off its scrollbar.
+    ///
+    /// **These constants mirror the probe's and have to move together.** They cannot be
+    /// shared -- the two halves are separate assemblies on different frameworks -- so a
+    /// change there is a change here. A disagreement is self-correcting rather than
+    /// fatal: the probe measures the real panel and its measurement supersedes this.
+    /// </summary>
+    public static int WidenedColumns(int canvasWidth)
+    {
+        var leftSide = canvasWidth - ScreenFurniturePixels;
+        var slack = leftSide - GearReserveTotal;
+
+        if (slack < CellPixels) return VanillaColumns;
+
+        var usable = VanillaPanelPixels + slack - ExtraGapPixels;
+        var forGrid = usable - PanelChromePixels - ScrollSlackPixels;
+
+        var columns = ColumnsThatFit(forGrid);
+
+        if (columns < VanillaColumns) return VanillaColumns;
+
+        return columns > AbsoluteMaxColumns ? AbsoluteMaxColumns : columns;
+    }
+
+    /// <summary><see cref="WidenedColumns"/> straight from a screen size.</summary>
+    public static int WidenedColumnsForScreen(int screenWidth, int screenHeight)
+    {
+        return WidenedColumns(CanvasWidth(screenWidth, screenHeight));
+    }
+
+    /// <summary>Canvas width the inventory screen spends on margins, gap and the stash panel.</summary>
+    private const int ScreenFurniturePixels = 714;
+
+    /// <summary>The stash panel before it is widened.</summary>
+    private const int VanillaPanelPixels = 680;
+
+    /// <summary>Both gear panels' reserve: StashWiden.DefaultReservePerPanel x 2.</summary>
+    private const int GearReserveTotal = 1240;
+
+    /// <summary>StashWiden.GapPixels.</summary>
+    private const int ExtraGapPixels = 24;
+
+    /// <summary>StashMeasure.DefaultChrome -- toolbar strip plus scrollbar.</summary>
+    private const int PanelChromePixels = 48;
+
+    /// <summary>StashWiden.ScrollSlackPixels.</summary>
+    private const int ScrollSlackPixels = 4;
+
+    /// <summary>
     /// <see cref="ConservativeColumns"/> straight from a screen size.
     /// </summary>
     public static int ConservativeColumnsForScreen(int screenWidth, int screenHeight)

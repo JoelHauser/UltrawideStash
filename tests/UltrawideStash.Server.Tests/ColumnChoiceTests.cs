@@ -33,7 +33,12 @@ public class ColumnChoiceTests
     {
         var choice = ColumnChoice.For(null, null, 3440, 1440, false);
 
-        Assert.Equal(20, choice.Columns);
+        // 19, not the 20 this asserted before. The old estimate assumed the stash panel
+        // was pinned and granted every pixel of canvas past 16:9; the client now widens
+        // the panel, and 19 is what that widening actually leaves room for -- measured
+        // on a live 3440x1440 client, viewport 1202 px around a 1198 px grid. Asking for
+        // 20 would have overflowed the panel by a column and grown a scrollbar.
+        Assert.Equal(19, choice.Columns);
         Assert.False(choice.IsNoOp);
         Assert.Equal(ColumnChoice.Origin.Estimated, choice.Source);
     }

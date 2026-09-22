@@ -1,4 +1,4 @@
-using SPTarkov.Server.Core.Models.Spt.Mod;
+﻿using SPTarkov.Server.Core.Models.Spt.Mod;
 
 namespace UltrawideStash.Server;
 
@@ -20,7 +20,7 @@ public record ModMetadata : IModMetadata
 
     public List<string>? Contributors { get; init; }
 
-    public SemanticVersioning.Version Version { get; init; } = new("0.9.2");
+    public SemanticVersioning.Version Version { get; init; } = new("0.9.3");
 
     /// <summary>
     /// A hard gate: a mod outside the range loads nothing and logs nothing, so
@@ -39,3 +39,4 @@ public record ModMetadata : IModMetadata
 
     public bool HasPrepatcher { get; init; }
 }
+

@@ -9,7 +9,7 @@
     <Nullable>disable</Nullable>
 
     <!-- Must match ProbePlugin.PluginVersion. Two places, and they have to agree. -->
-    <Version>0.9.2</Version>
+    <Version>0.9.3</Version>
 
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -62,6 +62,7 @@
   </ItemGroup>
 
 </Project>
+
 
 
 

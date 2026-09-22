@@ -68,11 +68,41 @@ public class StashWidener(
             System.IO.Path.Combine(folder, Measurement.FileName),
             out var measurementNote);
 
+        // The screen the game will open on, so the very first start can size the stash
+        // without waiting for the client to measure itself. Falls back to the declared
+        // size in the config when it cannot be read.
+        var detected = ScreenProbe.Detect(out var screenNote);
+
+        var screenWidth = detected?.Width ?? settings.ScreenWidth;
+        var screenHeight = detected?.Height ?? settings.ScreenHeight;
+
+        // A measurement taken on a different screen describes a panel that no longer
+        // exists. Keeping it would size the stash for the old monitor and, if that one
+        // was wider, overflow the new one -- so it is dropped and the estimate used
+        // until the client measures again.
+        if (measurement is not null && detected is not null)
+        {
+            var now = $"{detected.Value.Width}x{detected.Value.Height}";
+            var then = measurement.Screen;
+
+            if (!string.IsNullOrEmpty(then)
+                && !string.Equals(then, now, StringComparison.Ordinal))
+            {
+                logger.Info(
+                    $"[UltrawideStash] The stored measurement was taken on {then} and this "
+                    + $"machine is now {now}, so it has been ignored. Open your stash once and "
+                    + "restart to measure the new screen.");
+
+                measurement = null;
+                measurementNote = $"measurement from {then} discarded";
+            }
+        }
+
         var choice = ColumnChoice.For(
             settings.Columns,
             measurement,
-            settings.ScreenWidth,
-            settings.ScreenHeight,
+            screenWidth,
+            screenHeight,
             settings.IgnoreMeasurement);
 
         WriteUninstallNote(folder);
@@ -185,7 +215,7 @@ public class StashWidener(
         // Always say how the width was arrived at. The failure this guards against is
         // silent -- a grid too wide for the panel is clipped, not resized -- so the
         // reasoning has to be in the log whether or not anything looks wrong.
-        logger.Info($"[UltrawideStash] Width: {choice.Reason}.");
+        logger.Info($"[UltrawideStash] Width: {choice.Reason}. ({screenNote}.)");
 
         if (choice.Source == ColumnChoice.Origin.Clamped)
         {

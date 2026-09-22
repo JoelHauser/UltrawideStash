@@ -783,3 +783,48 @@ Widening pulls the panel ~550 px left, out from under the readout, and the heade
 readable. Uninstalling brings the overlap back and looks like the mod broke something.
 Not yet confirmed whether the cause is vanilla or one of UIScale.Reloaded, Tyfon.UIFixes,
 MoxoPixel.MenuOverhaul or tarkin.hideoutuirevamp, all of which touch this screen.
+
+
+## Working out of the box, 0.9.3
+
+Before this, the first server start after an install had no measurement and produced a
+vanilla stash. The player then had to launch the game, open the stash, quit and restart
+the server before anything happened -- a first run indistinguishable from a broken mod,
+and not something to ship to other people.
+
+The probe was never needed to know the answer. The client's widening is deterministic,
+and the canvas width follows from the screen resolution, which the server can read
+without the game running: **Unity saves it to
+`HKCU\Software\Battlestate Games\EscapeFromTarkov`** as `Screenmanager Resolution
+Width_h<hash>` / `Height_h<hash>`. Value names are found by prefix, since the hash is
+not something to hard-code. See `ScreenProbe`.
+
+So the server now predicts what the client will do, in `StashFit.WidenedColumns`. The
+layout, measured off a live client, is:
+
+```
+12 | LeftSide | 10 | Stash Panel 680 | 12        (sums to the canvas width)
+```
+
+so `LeftSide = canvas - 714` -- 1866 at canvas 2580, 1206 at 1920, both confirmed in
+the logs. Narrow it to the 1240 reserve, keep 24 px of the slack as clearance, give the
+rest to the panel, then take off 48 px of chrome and 4 px of scroll slack.
+
+**The constants are duplicated from the probe and have to move together.** The halves
+are separate assemblies on different frameworks, so they cannot share them. A drift is
+self-correcting rather than fatal -- a real measurement supersedes the prediction -- but
+`WidenedColumnsTests` pins the measured 3440x1440 case at 19 so drift fails a test
+rather than shipping.
+
+Two things follow:
+
+- `ConservativeColumns` is now only history. It assumed the panel was pinned and granted
+  every pixel past 16:9, answering **20** on a 2580 canvas -- one more column than the
+  widened panel can show, which is a horizontal scrollbar.
+- A measurement whose `screen` does not match the detected resolution is **discarded**.
+  It describes a panel that no longer exists, and if the old monitor was wider it would
+  overflow the new one.
+
+Non-Windows, a dedicated server, or an account that has never run EFT all fall back to
+the declared size in the config, which is 1920x1080 and yields vanilla -- the safe answer
+when the screen is genuinely unknown.

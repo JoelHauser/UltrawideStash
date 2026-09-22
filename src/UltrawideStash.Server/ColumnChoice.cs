@@ -144,8 +144,13 @@ public static class ColumnChoice
         }
 
         from = Origin.Estimated;
+
+        // Predict what the client's widening will produce rather than assuming the
+        // panel is pinned. ConservativeColumns was written when it was -- it grants
+        // only canvas beyond 16:9 and answers 20 on a 2580 canvas, one more than the
+        // widened panel can actually show, which would overflow into a scrollbar.
         return Clamp(
-            StashFit.ConservativeColumnsForScreen(screenWidth, screenHeight),
+            StashFit.WidenedColumnsForScreen(screenWidth, screenHeight),
             StashFit.VanillaColumns,
             StashFit.AbsoluteMaxColumns);
     }
