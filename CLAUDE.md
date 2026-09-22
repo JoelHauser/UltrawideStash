@@ -729,3 +729,57 @@ screen 1920x1080 -- CHECK: viewport 632.0 px vs grid 1198.0 px -- OVERFLOW by 56
 
 Self-healing on the next server start, because the probe rewrites the measurement for
 the new resolution -- but broken in between. **Not fixed.**
+
+
+## Uninstall is the weak point -- verified the hard way, 2026-09-21
+
+Removing the mod by deleting its files **strands every item sitting in columns 10+**.
+The documented path is: set `columns` to 10, start the server once so the repack runs,
+*then* delete. Delete first and that step never happens.
+
+This was not theoretical. The author uninstalled his own mod by deleting the folder and
+left 2 items at columns 12-13 on a live profile.
+
+Three facts that decide the design:
+
+- **Nothing of ours runs after the files are gone.** No shutdown hook, no uninstall
+  event. Whatever has to happen on removal happens *before* deletion or not at all.
+- **SPT does not heal it.** `ProfileFixerService` handles circular parent references,
+  orphaned insurance and dangling counters -- there is nothing for out-of-bounds grid
+  positions. Confirmed by observation: items sat at x=12 across several server starts
+  and SPT never touched them.
+- **Nothing is lost.** SPT has no out-of-bounds concept and never prunes, so the items
+  are still in the profile at their old coordinates. Reinstalling brings them back;
+  `repair-stash.ps1` packs them home without the mod.
+
+"Never strand anything" is not reachable while capacity is held: a 19x36 grid's first
+ten columns are 360 cells against 680 of content, so a stash over half full *must* use
+the wide columns. Compacting leftward on every start would fix it and reshuffle a
+layout the player arranged on purpose, every session -- worse than the problem.
+
+So the target is **one action that cannot be done in the wrong order**: a generated
+`UNINSTALL.ps1`, written into the mod folder on every server start so it always matches
+the installed version, which sets columns to 10, packs every profile, verifies, and only
+then deletes the mod's own files. **Not built yet.**
+
+## Backups accumulate without limit
+
+`ProfileStore` writes `<profile>.json.ultrawidestash-<utc>.bak` every time it relocates
+an item, and never prunes. The unique timestamp is deliberate -- a fixed name means the
+second run overwrites the copy taken before the first, destroying the only pristine
+state -- but unbounded growth is a bug. **17 relocation events in one debugging session**,
+each a full 380-730 KB profile copy.
+
+Worth keeping: one `-original.bak` that is never overwritten, plus the two most recent.
+**Not built yet.**
+
+## The mod was hiding a vanilla layout bug
+
+At 3440x1440 the currency readout is anchored to the canvas top-right and vanilla parks
+the stash panel in the right 680 px directly beneath it, so `SORT TABLE` is overlapped by
+the rouble figure. Visible in the player's screenshots *before* anything was installed.
+
+Widening pulls the panel ~550 px left, out from under the readout, and the header becomes
+readable. Uninstalling brings the overlap back and looks like the mod broke something.
+Not yet confirmed whether the cause is vanilla or one of UIScale.Reloaded, Tyfon.UIFixes,
+MoxoPixel.MenuOverhaul or tarkin.hideoutuirevamp, all of which touch this screen.
