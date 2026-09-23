@@ -311,9 +311,21 @@ five templates this mod edits. A Standard-edition player climbs Standard -> Left
 nobody stays on the template their edition started them on.**
 
 `InventoryHelper.GetPlayerStashSize(PmcData)` does still read `CellsH`/`CellsV` off the
-template (falling back to 10 and 66 when the value is 0) and then **add** the `StashSize`
-bonus *value* to the rows -- so an additive bonus from another mod composes with our
-edit. The vanilla hideout just contributes zero. A bonus row is worth `columns` cells so
+template (falling back to 10 and 66 when the value is 0) and then **adds the value of the
+profile's first `StashRows` bonus** to the rows (a different bonus type from `StashSize`;
+checked by decompiling live 4.1.6). So an additive bonus composes with our edit.
+
+**That bonus is real on live profiles, and ignoring it was a bug until 1.0.2.** SCOOP
+carries `{"type": "StashRows", "value": 2}`, so the grid is 19x36 by template plus 2 = 38
+rows. The repack planned against 36, so a 5x7 Pilgrim the player put at row 31 was
+"moved back inside" on every start (`Moved 1` in the log, a `.bak` each time); the
+player dragged it back and pinned/locked it, and it moved again. Reported as "pinned or
+locked items reset position after a server restart" -- pinning was incidental.
+`ProfileStore.StashContents.BonusRows` now carries the bonus (first only, cast to int, as
+SPT does it); the repack and the dry run plan against `RowsFor(templateRows)`, and the
+template depth floor uses `TemplateRowsNeeded()` so one player's bonus rows do not deepen
+the template for everyone. `BonusRowsTests` pins the reported case. Verified live
+2026-09-23: 1.0.2 moved nothing and wrote no `.bak`. A bonus row is worth `columns` cells so
 it is worth more when wider; `compensateRows` holds the **base** at vanilla and a profile
 carrying one ends up above vanilla overall. Left alone deliberately -- scaling it would
 mean patching `GetPlayerStashSize`, which is where every other stash mod also lives.

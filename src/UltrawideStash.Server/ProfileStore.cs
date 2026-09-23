@@ -38,6 +38,11 @@ public static class ProfileStore
     /// <summary>
     /// One profile's stash, as read, plus its Sorting Table — which is where anything
     /// that will not fit the stash gets put.
+    ///
+    /// <paramref name="BonusRows"/> is the profile's own <c>StashRows</c> bonus: rows the
+    /// player has on top of the template, which every other profile on that template does
+    /// not. Missing it made the repack move anything the player kept in those rows on
+    /// every start -- see <see cref="StashRowsBonus"/>.
     /// </summary>
     public sealed record StashContents(
         string FilePath,
@@ -45,7 +50,35 @@ public static class ProfileStore
         string StashTemplateId,
         List<StashRepack.Placement> Items,
         string? SortingTableId,
-        List<StashRepack.Placement> SortingTableItems);
+        List<StashRepack.Placement> SortingTableItems,
+        int BonusRows = 0)
+    {
+        /// <summary>
+        /// The rows this player's stash really has when the template has
+        /// <paramref name="templateRows"/>: the same sum SPT's
+        /// <c>InventoryHelper.GetPlayerStashSize</c> makes.
+        /// </summary>
+        public int RowsFor(int templateRows) => templateRows + BonusRows;
+
+        /// <summary>
+        /// How many template rows the deepest item needs, once this profile's bonus rows
+        /// are taken off. The bonus is the player's, not the template's, so it must not
+        /// raise the template for everyone else.
+        /// </summary>
+        public int TemplateRowsNeeded()
+        {
+            var needed = 0;
+
+            foreach (var item in Items)
+            {
+                var bottom = item.Y + item.EffectiveHeight;
+
+                if (bottom > needed) needed = bottom;
+            }
+
+            return Math.Max(0, needed - BonusRows);
+        }
+    }
 
     /// <summary>
     /// Parse one profile. Returns null when it has no PMC stash to speak of, which is
@@ -121,7 +154,46 @@ public static class ProfileStore
         }
 
         return new StashContents(
-            path, stashId!, stashTemplate!, placements, sortingTableId, sortingTablePlacements);
+            path, stashId!, stashTemplate!, placements, sortingTableId, sortingTablePlacements,
+            StashRowsBonus(root?["characters"]?["pmc"]?["Bonuses"]));
+    }
+
+    /// <summary>
+    /// The extra stash rows a profile's <c>StashRows</c> bonus grants, or 0.
+    ///
+    /// ## Why this matters (fixed in 1.0.2)
+    ///
+    /// SPT's <c>InventoryHelper.GetPlayerStashSize</c> takes the template's
+    /// <c>cellsV</c> and adds the value of the profile's **first** <c>StashRows</c>
+    /// bonus, and the game draws those rows too. Up to 1.0.1 the repack planned against
+    /// the template alone, so on a 19x36 Edge of Darkness stash with a +2 bonus a Pilgrim
+    /// the player had placed at row 31 (reaching row 37, inside the real 38) was "moved
+    /// back inside" on every start. Pinning or locking it did not help, which is how it
+    /// was reported.
+    ///
+    /// First only, and cast to int, exactly as SPT does it, so the repack's idea of the
+    /// grid is the server's.
+    /// </summary>
+    private static int StashRowsBonus(JsonNode? bonuses)
+    {
+        if (bonuses is not JsonArray array) return 0;
+
+        foreach (var bonus in array)
+        {
+            if (bonus is not JsonObject b) continue;
+
+            string? type;
+
+            try { type = b["type"]?.GetValue<string>(); }
+            catch { continue; }
+
+            if (!string.Equals(type, "StashRows", StringComparison.Ordinal)) continue;
+
+            try { return Math.Max(0, (int)(b["value"]?.GetValue<double>() ?? 0)); }
+            catch { return 0; }
+        }
+
+        return 0;
     }
 
     /// <summary>

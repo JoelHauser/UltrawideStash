@@ -330,7 +330,11 @@ public class StashWidener(
 
         foreach (var profile in profiles)
         {
-            var plan = StashRepack.For(profile.Items, columns, rows);
+            // Against this player's grid: the template's rows plus their own StashRows
+            // bonus. Planning without the bonus moved items the player had put in those
+            // rows on every start.
+            var profileRows = profile.RowsFor(rows);
+            var plan = StashRepack.For(profile.Items, columns, profileRows);
 
             var transfers = new List<StashRepack.Transfer>();
 
@@ -345,7 +349,7 @@ public class StashWidener(
                     logger.Error(
                         $"[UltrawideStash] {edition}: {plan.Homeless.Count} item(s) in "
                         + $"'{System.IO.Path.GetFileName(profile.FilePath)}' do not fit "
-                        + $"{columns}x{rows} and that profile has no sorting table to put "
+                        + $"{columns}x{profileRows} and that profile has no sorting table to put "
                         + "them in. Free some space, or raise columns, and start again.");
                     return false;
                 }
@@ -365,7 +369,7 @@ public class StashWidener(
                     logger.Error(
                         $"[UltrawideStash] {edition}: {tooWide.Count} item(s) in "
                         + $"'{System.IO.Path.GetFileName(profile.FilePath)}' fit neither "
-                        + $"{columns}x{rows} nor the sorting table. Nothing was changed.");
+                        + $"{columns}x{profileRows} nor the sorting table. Nothing was changed.");
                     return false;
                 }
             }
@@ -440,14 +444,9 @@ public class StashWidener(
         {
             if (string.IsNullOrEmpty(profile.StashTemplateId)) continue;
 
-            var needed = 0;
-
-            foreach (var item in profile.Items)
-            {
-                var bottom = item.Y + item.EffectiveHeight;
-
-                if (bottom > needed) needed = bottom;
-            }
+            // Bonus rows are the player's own, so they come off before the template's
+            // depth is decided.
+            var needed = profile.TemplateRowsNeeded();
 
             if (!deepest.TryGetValue(profile.StashTemplateId, out var already) || needed > already)
             {
@@ -501,7 +500,7 @@ public class StashWidener(
     {
         foreach (var profile in profiles)
         {
-            var plan = StashRepack.For(profile.Items, columns, rows);
+            var plan = StashRepack.For(profile.Items, columns, profile.RowsFor(rows));
 
             if (!plan.Complete || plan.Homeless.Count > 0) return false;
         }
@@ -515,12 +514,9 @@ public class StashWidener(
 
         foreach (var profile in profiles)
         {
-            foreach (var item in profile.Items)
-            {
-                var needed = item.Y + item.EffectiveHeight;
+            var needed = profile.TemplateRowsNeeded();
 
-                if (needed > deepest) deepest = needed;
-            }
+            if (needed > deepest) deepest = needed;
         }
 
         return deepest;
