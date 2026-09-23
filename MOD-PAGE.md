@@ -35,8 +35,8 @@ empty beside it. This widens the stash panel and fills them. On 3440x1440 that's
 ## ⚠️ Back up your profile first
 
 Changing the shape of your stash means moving items, so **this mod rewrites your profile
-file**. It takes a timestamped `.bak` before every write and only replaces the real file
-once the new one is whole — but it's a young mod, and anything that rewrites a profile
+file**. It takes a timestamped `.bak` before every change and hands the result to SPT to
+save — but it's a young mod, and anything that rewrites a profile
 can damage one. **Copy `SPT_Runtime/user/profiles` somewhere safe before your first
 start.**
 

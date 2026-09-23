@@ -189,7 +189,7 @@ for the same profile on every start for two days, a `.bak` per start, and SPT's
 `InventoryHelper` logging `[OOB] ... extends outside the containers bounds` for every
 stranded item whenever anything (a casino payout, say) was added to that stash.
 
-**Fixed (pending release):** a profile the server has loaded is read from its loaded
+**Fixed in 1.0.1:** a profile the server has loaded is read from its loaded
 copy (serialised by SPT's `JsonUtil` and fed to the same `ProfileStore.Parse`), moved in
 place by `ProfileStore.ApplyToItems`, and saved with `SaveServer.SaveProfileAsync`. The
 file path (`ApplyChanges`) stays only for a profile SPT has not loaded or has marked
@@ -710,15 +710,16 @@ in place. Anyone who downloaded 1.0.0 before that has the build that widens in r
 both zips say 1.0.0 -- the BepInEx log tells them apart: only the re-release ever prints
 `in raid: inventory screen put back to vanilla`.
 
-### The relocation never stuck -- fixed 2026-09-22 evening, not yet released
+### 1.0.1, released 2026-09-22 -- the relocation never stuck
 
 Found from the casino side: 9,400 `[OOB]` errors during a slots stress test turned out
 to be PITTEST items this mod had "moved" at startup and SPT had not. Root cause is the
 misread `SaveCallbacks` priority (see *What 0.4.0 does instead*). The fix moves loaded
 profiles in memory and saves through `SaveServer`; 168 tests (6 new in
-`LoadedProfileTests`). Verified on the live 4.1.6 install over two restarts. Version not
-yet bumped: for 1.0.0 the user chose to overwrite the release in place, so ask whether
-this is 1.0.1 or another overwrite before packing.
+`LoadedProfileTests`). Verified on the live 4.1.6 install over two restarts. Released as
+**1.0.1** rather than another in-place overwrite -- the user's choice, because this one
+changes what happens to saved profiles and people on 1.0.0 need to be able to tell.
+Tagged `v1.0.1`, `UltrawideStash_V1.0.1.zip`, DLLs stamped `1.0.1+12fa4d6`.
 
 
 ## Verified in game, 2026-09-21
