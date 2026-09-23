@@ -36,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole

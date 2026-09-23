@@ -733,6 +733,14 @@ profiles in memory and saves through `SaveServer`; 168 tests (6 new in
 changes what happens to saved profiles and people on 1.0.0 need to be able to tell.
 Tagged `v1.0.1`, `UltrawideStash_V1.0.1.zip`, DLLs stamped `1.0.1+12fa4d6`.
 
+### 1.0.2, released 2026-09-23 -- items in bonus rows were moved on every start
+
+Reported as pinned or locked items resetting position after a server restart. The cause
+was the profile's `StashRows` bonus, which the repack ignored; see *The hideout stash
+bonus is a TEMPLATE SWAP*. 174 tests (6 new in `BonusRowsTests`). Verified with one
+server start on the live 4.1.6 install. Tagged `v1.0.2`, `UltrawideStash_V1.0.2.zip`,
+DLLs stamped `1.0.2+24762c4`.
+
 
 ## Verified in game, 2026-09-21
 

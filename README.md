@@ -508,7 +508,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-168 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
+174 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
 `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
