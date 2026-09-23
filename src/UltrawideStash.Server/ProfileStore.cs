@@ -1,22 +1,29 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using SPTarkov.Server.Core.Extensions;
+using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 
 namespace UltrawideStash.Server;
 
 /// <summary>
-/// Reads the stash out of a profile file, and writes relocated items back.
+/// Reads the stash out of a profile, and writes relocated items back -- into the
+/// server's loaded copy when there is one, into the file when there is not.
 ///
-/// ## Why this touches the file rather than the server
+/// ## Why the loaded copy comes first (corrected after 1.0.0)
 ///
-/// This mod runs at <c>OnLoadOrder.PostLoad</c> (1,000,000) and <c>SaveCallbacks</c> —
-/// which calls <c>SaveServer.LoadAsync()</c> — carries a bare <c>[Injectable]</c>, so it
-/// sits at the default priority of <c>int.MaxValue</c> and runs later. SPT orders
-/// <c>IOnLoad</c> ascending, so **we run before any profile is loaded**.
+/// Up to 1.0.0 this edited only the file, on the belief that it ran before SPT loaded
+/// any profile. **It never did.** <c>SaveCallbacks</c> is
+/// <c>[Injectable(InjectionType.Transient, int.MaxValue, TypePriority = 600000)]</c> --
+/// the <c>int.MaxValue</c> is a different positional argument, and the named
+/// <c>TypePriority</c> puts it at <c>OnLoadOrder.SaveCallbacks</c>, well before our
+/// <c>PostLoad</c> (1,000,000). True of 4.1.2 and 4.1.6 alike.
 ///
-/// That was a bug when 0.2.0 tried to read profiles through the server and got an empty
-/// dictionary. Here it is exactly the property we want: edit the file on disk and the
-/// server then loads the edited version. No conflict, no second write, nothing to
-/// reconcile.
+/// So every profile was already in memory when the file was edited. The client was
+/// served the unmoved copy, and SPT's next save wrote it straight back over the edit:
+/// the same items were "moved" on every start, a .bak accrued each time, and SPT logged
+/// an <c>[OOB]</c> error per stranded item whenever anything was added to that stash.
+/// <see cref="ApplyToItems"/> is the fix; <see cref="ApplyChanges"/> remains for a
+/// profile the server has not loaded.
 ///
 /// ## Writing someone's profile is not done lightly
 ///
@@ -45,8 +52,17 @@ public static class ProfileStore
     /// normal for a freshly created account and is not an error.
     /// </summary>
     public static StashContents? Read(string path, Func<string, (int Width, int Height)> sizeOf)
+        => Parse(File.ReadAllText(path), path, sizeOf);
+
+    /// <summary>
+    /// <see cref="Read"/> from text already in hand -- which is how the server's loaded
+    /// copy is read: serialised by SPT's own JsonUtil, it is exactly the shape SPT writes
+    /// to disk. <paramref name="path"/> is only carried through for naming and backups.
+    /// </summary>
+    public static StashContents? Parse(
+        string json, string path, Func<string, (int Width, int Height)> sizeOf)
     {
-        var root = JsonNode.Parse(File.ReadAllText(path));
+        var root = JsonNode.Parse(json);
 
         var inventory = root?["characters"]?["pmc"]?["Inventory"];
         var items = inventory?["items"]?.AsArray();
@@ -178,11 +194,7 @@ public static class ProfileStore
 
         if (written == 0) return 0;
 
-        // Back up before replacing anything. A timestamp rather than a fixed name so a
-        // second run cannot overwrite the copy taken before the first.
-        var backup = $"{path}.ultrawidestash-{DateTime.UtcNow:yyyyMMdd-HHmmss}.bak";
-
-        File.Copy(path, backup, overwrite: false);
+        Backup(path);
 
         var temp = path + ".ultrawidestash.tmp";
 
@@ -197,6 +209,103 @@ public static class ProfileStore
 
         return written;
     }
+
+    /// <summary>
+    /// Copies the profile file aside before anything changes it. A timestamp rather than
+    /// a fixed name so a second run cannot overwrite the copy taken before the first.
+    /// Throws if the copy fails, and callers treat that as "change nothing".
+    /// </summary>
+    public static void Backup(string path)
+    {
+        var backup = $"{path}.ultrawidestash-{DateTime.UtcNow:yyyyMMdd-HHmmss}.bak";
+
+        File.Copy(path, backup, overwrite: false);
+    }
+
+    /// <summary>
+    /// <see cref="ApplyChanges"/> for a profile the server has loaded: the same moves and
+    /// transfers, made to its live items. Returns how many items were changed. The
+    /// caller saves the profile afterwards through <c>SaveServer</c>, so SPT writes the
+    /// file itself and nothing is left to overwrite the move.
+    ///
+    /// Same rule as the file path: only an item whose location is an object is a grid
+    /// placement. A magazine's bare-number location is left alone.
+    /// </summary>
+    public static int ApplyToItems(
+        IEnumerable<Item?> items,
+        IReadOnlyList<StashRepack.Move> moves,
+        string? sortingTableId = null,
+        IReadOnlyList<StashRepack.Transfer>? transfers = null)
+    {
+        var hasTransfers = transfers is { Count: > 0 } && !string.IsNullOrEmpty(sortingTableId);
+
+        if (moves.Count == 0 && !hasTransfers) return 0;
+
+        var wantedMoves = new Dictionary<string, StashRepack.Move>(moves.Count);
+
+        foreach (var move in moves) wantedMoves[move.ItemId] = move;
+
+        var wantedTransfers = new Dictionary<string, StashRepack.Transfer>();
+
+        if (hasTransfers)
+        {
+            foreach (var t in transfers!) wantedTransfers[t.ItemId] = t;
+        }
+
+        var written = 0;
+
+        foreach (var item in items)
+        {
+            if (item is null) continue;
+
+            var id = item.Id.ToString();
+            var isMove = wantedMoves.TryGetValue(id, out var move);
+            var isTransfer = !isMove && wantedTransfers.ContainsKey(id);
+
+            if (!isMove && !isTransfer) continue;
+
+            var loc = GridLocationOf(item);
+
+            if (loc is null) continue;
+
+            if (isMove)
+            {
+                loc.X = move.ToX;
+                loc.Y = move.ToY;
+            }
+            else
+            {
+                var transfer = wantedTransfers[id];
+
+                // Into the Sorting Table, re-parented as in ApplyChanges. Its grid is
+                // named "hideout", the same as the stash's.
+                item.ParentId = sortingTableId;
+                item.SlotId = "hideout";
+                loc.X = transfer.ToX;
+                loc.Y = transfer.ToY;
+            }
+
+            // Assigned back even when it was already an ItemLocation: a freshly loaded
+            // profile holds a JsonElement here, and editing a parsed copy of that would
+            // change nothing.
+            item.Location = loc;
+            written++;
+        }
+
+        return written;
+    }
+
+    /// <summary>
+    /// The item's grid placement, or null when it has none. SPT holds a location as a
+    /// raw <see cref="JsonElement"/> until something parses it, and as an
+    /// <see cref="ItemLocation"/> after; a magazine's is a bare number either way.
+    /// </summary>
+    private static ItemLocation? GridLocationOf(Item item) => item.Location switch
+    {
+        ItemLocation loc => loc,
+        JsonElement { ValueKind: JsonValueKind.Object } => item.GetParsedLocation(),
+        _ => null,
+    };
 
     private static int ReadInt(JsonObject loc, string name)
     {

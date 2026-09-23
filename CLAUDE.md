@@ -95,6 +95,15 @@ work at all**, and the way it failed is worth keeping.
 
 ### The load-order bug (fixed in 0.3.0)
 
+> **Corrected 2026-09-22: the IL reading below is wrong, and everything built on it
+> was.** `SaveCallbacks` is **not** a bare `[Injectable]`. Decompiled from both the
+> 4.1.2 package and the live 4.1.6 `SPTarkov.Server.Core.dll`, it is
+> `[Injectable(InjectionType.Transient, int.MaxValue, TypePriority = 600000)]` -- the
+> `int.MaxValue` is a different positional argument, and the named `TypePriority` is
+> `OnLoadOrder.SaveCallbacks` (600,000). So **profiles are loaded before `PostLoad`**,
+> on every version this mod has targeted. Whatever emptied 0.2.0's guard, it was not
+> load order. The consequence for 0.4.0-1.0.0 is under *What 0.4.0 does instead*.
+
 0.2.0 asked `SaveServer.GetProfiles()` from its `IOnLoad` at `OnLoadOrder.PostLoad`. From
 the IL:
 
@@ -172,10 +181,24 @@ that ever settled it was starting the game.
 `StashRepack` + `ProfileStore` relocate out-of-bounds items **in the profile file** on
 every start, against the grid's final dimensions.
 
-The ordering that made 0.2.0's guard broken is what makes this correct: we run at
-`PostLoad` (1,000,000), `SaveCallbacks` sits at the default `int.MaxValue`, SPT orders
-ascending -- so the file is edited before the server ever reads it. No second copy, no
-reconciliation.
+~~The file is edited before the server ever reads it.~~ **It never was** -- see the
+correction above. From 0.4.0 through 1.0.0 the relocation edited the file *after* SPT
+had loaded it, so SPT served the client the unmoved copy and its next save wrote that
+back over the edit. Observed on the live install 2026-09-22: "Moved 19 back inside"
+for the same profile on every start for two days, a `.bak` per start, and SPT's
+`InventoryHelper` logging `[OOB] ... extends outside the containers bounds` for every
+stranded item whenever anything (a casino payout, say) was added to that stash.
+
+**Fixed (pending release):** a profile the server has loaded is read from its loaded
+copy (serialised by SPT's `JsonUtil` and fed to the same `ProfileStore.Parse`), moved in
+place by `ProfileStore.ApplyToItems`, and saved with `SaveServer.SaveProfileAsync`. The
+file path (`ApplyChanges`) stays only for a profile SPT has not loaded or has marked
+invalid. Verified live: SCOOP's 19 moved once, the file kept them, the next start moved
+nothing and wrote no `.bak`, zero `[OOB]` lines, and no two items share a cell.
+
+Watch for: `Item.Location` is a raw `JsonElement` on a freshly loaded profile and an
+`ItemLocation` once anything parses it. Editing a parsed copy without assigning it back
+changes nothing -- `ApplyToItems` always assigns, and a test pins the `JsonElement` case.
 
 Rules worth keeping:
 
@@ -193,7 +216,8 @@ Rules worth keeping:
   that fits neither the stash nor the table aborts the whole stash, template change
   included.
 - **Backup, temp file, then replace.** `ProfileStore.ApplyChanges` copies to a timestamped
-  `.bak`, writes a `.tmp`, and only then overwrites.
+  `.bak`, writes a `.tmp`, and only then overwrites. The loaded-profile path takes the
+  same `.bak` (`ProfileStore.Backup`) before touching memory, and lets SPT write the file.
 - Biggest-first placement, because singles placed first fragment the grid and a large
   case then fails on space that existed.
 
@@ -685,6 +709,16 @@ was moved to the new commit and force-pushed, and the release zip and notes were
 in place. Anyone who downloaded 1.0.0 before that has the build that widens in raid, and
 both zips say 1.0.0 -- the BepInEx log tells them apart: only the re-release ever prints
 `in raid: inventory screen put back to vanilla`.
+
+### The relocation never stuck -- fixed 2026-09-22 evening, not yet released
+
+Found from the casino side: 9,400 `[OOB]` errors during a slots stress test turned out
+to be PITTEST items this mod had "moved" at startup and SPT had not. Root cause is the
+misread `SaveCallbacks` priority (see *What 0.4.0 does instead*). The fix moves loaded
+profiles in memory and saves through `SaveServer`; 168 tests (6 new in
+`LoadedProfileTests`). Verified on the live 4.1.6 install over two restarts. Version not
+yet bumped: for 1.0.0 the user chose to overwrite the release in place, so ask whether
+this is 1.0.1 or another overwrite before packing.
 
 
 ## Verified in game, 2026-09-21

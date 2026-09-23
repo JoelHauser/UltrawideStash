@@ -11,6 +11,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+
+    <!--
+      With its runtime assets, unlike the mod, which excludes them so the zip does not
+      ship a second copy of SPT into the server. LoadedProfileTests builds real Item
+      objects, and the test host has no server around it to supply the types.
+    -->
+    <PackageReference Include="SPTarkov.Server.Core" Version="4.1.2" />
   </ItemGroup>
 
   <ItemGroup>

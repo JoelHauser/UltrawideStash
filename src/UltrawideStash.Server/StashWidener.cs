@@ -4,8 +4,10 @@ using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
+using SPTarkov.Server.Core.Models.Eft.Profile;
 using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Servers;
+using SPTarkov.Server.Core.Utils;
 
 namespace UltrawideStash.Server;
 
@@ -38,22 +40,28 @@ namespace UltrawideStash.Server;
 /// the mod safe to uninstall:** set <c>columns</c> to 10, start the server once, and
 /// everything is packed back into a vanilla stash.
 ///
-/// ## Ordering, which is load-bearing
+/// ## Ordering, which is load-bearing -- and was misread until 1.0.1
 ///
 /// This runs at <c>OnLoadOrder.PostLoad</c> (1,000,000). <c>SaveCallbacks</c>, which
-/// calls <c>SaveServer.LoadAsync()</c>, carries a bare <c>[Injectable]</c> and so sits at
-/// the default <c>int.MaxValue</c>; SPT orders <c>IOnLoad</c> ascending. We therefore run
-/// **before any profile is loaded**, which is precisely why editing the files on disk is
-/// correct and needs no reconciliation with the server's own copy.
+/// calls <c>SaveServer.LoadAsync()</c>, runs at <c>OnLoadOrder.SaveCallbacks</c>
+/// (600,000) -- its attribute's <c>int.MaxValue</c> is a different argument -- and SPT
+/// orders <c>IOnLoad</c> ascending. So **every profile is already loaded** by the time
+/// this runs.
+///
+/// Up to 1.0.0 this edited only the files, and SPT's loaded copies never saw it: the
+/// client was served the unmoved stash and the next save put it back. Now a loaded
+/// profile is read from, moved in and saved through <c>SaveServer</c>; the file path is
+/// kept only for a profile the server has not loaded. See <see cref="ProfileStore"/>.
 /// </summary>
 [Injectable(TypePriority = OnLoadOrder.PostLoad)]
 public class StashWidener(
     ISptLogger<StashWidener> logger,
     TemplateTable templates,
-    SaveServer saveServer)
+    SaveServer saveServer,
+    JsonUtil jsonUtil)
     : IOnLoad
 {
-    public Task OnLoadAsync(CancellationToken cancellationToken)
+    public async Task OnLoadAsync(CancellationToken cancellationToken)
     {
         var folder = ModFolder();
 
@@ -115,7 +123,7 @@ public class StashWidener(
                 $"[UltrawideStash] Could not read profiles ({why}). Doing nothing at all this "
                 + "start: without knowing what is stored, resizing the stash could put items "
                 + "somewhere you cannot reach them.");
-            return Task.CompletedTask;
+            return;
         }
 
         // The row floor for each rung of the hideout's stash ladder. A Standard player
@@ -125,6 +133,9 @@ public class StashWidener(
 
         var applied = 0;
         var moved = 0;
+
+        // Loaded profiles changed in memory, saved once the loop is done.
+        var toSave = new List<MongoId>();
 
         foreach (var (id, edition) in StashLadder.Rungs)
         {
@@ -176,7 +187,7 @@ public class StashWidener(
             var finalColumns = plan.Applied ? plan.Columns : vanillaColumns;
             var finalRows = plan.Applied ? plan.Rows : vanillaRows;
 
-            if (!Relocate(mine, finalColumns, finalRows, edition, ref moved))
+            if (!Relocate(mine, finalColumns, finalRows, edition, toSave, ref moved))
             {
                 logger.Error(
                     $"[UltrawideStash] {edition} stash left at {vanillaColumns}x{vanillaRows}: "
@@ -201,6 +212,23 @@ public class StashWidener(
                     $"[UltrawideStash] {edition}: {vanillaColumns}x{vanillaRows} -> "
                     + $"{plan.Columns}x{plan.Rows} ({plan.Capacity} cells, {plan.PixelWidth}px) "
                     + $"-- {plan.Reason}.");
+            }
+        }
+
+        // The moves are already in the loaded profiles, which is what the client is
+        // served; this only puts them on disk now rather than at SPT's next save. A
+        // failure here loses nothing -- that save will write them anyway.
+        foreach (var id in toSave.Distinct())
+        {
+            try
+            {
+                await saveServer.SaveProfileAsync(id, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                logger.Warning(
+                    $"[UltrawideStash] Could not save profile {id} straight away ({e.Message}). "
+                    + "The relocation is in the running server and will be written at its next save.");
             }
         }
 
@@ -278,8 +306,6 @@ public class StashWidener(
                 "[UltrawideStash] To remove this mod safely: set columns to 10, start the server "
                 + "once so items are packed back into a vanilla stash, then delete the files.");
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -293,6 +319,7 @@ public class StashWidener(
         int columns,
         int rows,
         string edition,
+        List<MongoId> toSave,
         ref int moved)
     {
         // Plan every profile before writing any of them, so a stash that cannot be
@@ -353,8 +380,25 @@ public class StashWidener(
         {
             try
             {
-                var written = ProfileStore.ApplyChanges(
-                    profile.FilePath, moves, profile.SortingTableId, transfers);
+                int written;
+                var loaded = LoadedProfile(profile.FilePath, out var id);
+
+                if (loaded?.CharacterData?.PmcData?.Inventory?.Items is { } items)
+                {
+                    // The copy the client is served and SPT will save. Backed up first,
+                    // exactly as the file path is, then moved in place.
+                    ProfileStore.Backup(profile.FilePath);
+
+                    written = ProfileStore.ApplyToItems(
+                        items, moves, profile.SortingTableId, transfers);
+
+                    if (written > 0) toSave.Add(id);
+                }
+                else
+                {
+                    written = ProfileStore.ApplyChanges(
+                        profile.FilePath, moves, profile.SortingTableId, transfers);
+                }
 
                 moved += written;
 
@@ -503,7 +547,14 @@ public class StashWidener(
         {
             try
             {
-                var contents = ProfileStore.Read(file, SizeOf);
+                // The loaded copy when there is one: it is what the client will be
+                // served, and SPT may have migrated or cleaned it since reading the file.
+                var loaded = LoadedProfile(file, out _);
+                var json = loaded is null ? null : jsonUtil.Serialize(loaded);
+
+                var contents = json is null
+                    ? ProfileStore.Read(file, SizeOf)
+                    : ProfileStore.Parse(json, file, SizeOf);
 
                 if (contents is not null) found.Add(contents);
             }
@@ -518,6 +569,26 @@ public class StashWidener(
         readable = true;
         why = $"{found.Count} profile(s)";
         return found;
+    }
+
+    /// <summary>
+    /// The server's loaded copy of the profile stored in <paramref name="file"/>, or null
+    /// when it has none -- a file SPT skipped, or one it marked invalid, which it will
+    /// neither serve nor save. Profiles are named for their id.
+    /// </summary>
+    private SptProfile? LoadedProfile(string file, out MongoId id)
+    {
+        id = default;
+
+        var name = System.IO.Path.GetFileNameWithoutExtension(file);
+
+        if (!MongoId.IsValidMongoId(name)) return null;
+
+        id = new MongoId(name);
+
+        if (!saveServer.ProfileExists(id) || saveServer.IsProfileInvalidOrUnloadable(id)) return null;
+
+        return saveServer.GetProfile(id);
     }
 
     /// <summary>
