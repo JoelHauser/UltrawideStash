@@ -738,8 +738,18 @@ Tagged `v1.0.1`, `UltrawideStash_V1.0.1.zip`, DLLs stamped `1.0.1+12fa4d6`.
 Reported as pinned or locked items resetting position after a server restart. The cause
 was the profile's `StashRows` bonus, which the repack ignored; see *The hideout stash
 bonus is a TEMPLATE SWAP*. 174 tests (6 new in `BonusRowsTests`). Verified with one
-server start on the live 4.1.6 install. Tagged `v1.0.2`, `UltrawideStash_V1.0.2.zip`,
-DLLs stamped `1.0.2+24762c4`.
+server start on the live 4.1.6 install. First published tagged at `a38c323`, DLLs
+stamped `1.0.2+24762c4`.
+
+**Re-released the same evening, in place, at the user's request** -- with the backup
+changes (see *Backups accumulate without limit*): backups moved to local AppData, three
+per profile, and the ones older versions left in `user/profiles` moved and trimmed on
+start. The `v1.0.2` tag was moved to the re-release commit and force-pushed, and the
+release zip and notes were replaced. DLLs now stamped `1.0.2+44eb77b`. Anyone who
+downloaded the first 1.0.2 has the StashRows fix but not the backup changes; the server
+log tells them apart -- only the re-release ever says `Moved N profile backup(s) out of
+the profiles folder`, or names `AppData\Local\UltrawideStash` in a `Moved ... back
+inside` line.
 
 
 ## Verified in game, 2026-09-21
