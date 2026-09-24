@@ -179,7 +179,7 @@ public class SortingTableOverflowTests : IDisposable
         Assert.Empty(tooWide);
         Assert.Equal(4, transfers.Count);
 
-        ProfileStore.ApplyChanges(path, plan.Moves, before.SortingTableId, transfers);
+        ProfileStore.ApplyChanges(path, plan.Moves, before.SortingTableId, transfers, backupDirectory: Path.Combine(_dir, "backups"));
 
         var after = ProfileStore.Read(path, _ => (1, 1))!;
 

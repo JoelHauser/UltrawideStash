@@ -108,7 +108,7 @@ public class ProfileStoreTests : IDisposable
     {
         var path = Write("a.json", ("i1", 0, 0), ("i2", 14, 3));
 
-        var written = ProfileStore.ApplyChanges(path, [new StashRepack.Move("i2", 14, 3, 1, 0)]);
+        var written = ProfileStore.ApplyChanges(path, [new StashRepack.Move("i2", 14, 3, 1, 0)], backupDirectory: Path.Combine(_dir, "backups"));
 
         Assert.Equal(1, written);
 
@@ -129,7 +129,7 @@ public class ProfileStoreTests : IDisposable
     {
         var path = Write("a.json", ("i1", 14, 3));
 
-        ProfileStore.ApplyChanges(path, [new StashRepack.Move("i1", 14, 3, 0, 0)]);
+        ProfileStore.ApplyChanges(path, [new StashRepack.Move("i1", 14, 3, 0, 0)], backupDirectory: Path.Combine(_dir, "backups"));
 
         var root = JsonNode.Parse(File.ReadAllText(path))!;
 
@@ -154,9 +154,12 @@ public class ProfileStoreTests : IDisposable
         var path = Write("a.json", ("i1", 14, 3));
         var original = File.ReadAllText(path);
 
-        ProfileStore.ApplyChanges(path, [new StashRepack.Move("i1", 14, 3, 0, 0)]);
+        var store = Path.Combine(_dir, "backups");
 
-        var backups = Directory.GetFiles(_dir, "a.json.ultrawidestash-*.bak");
+        ProfileStore.ApplyChanges(
+            path, [new StashRepack.Move("i1", 14, 3, 0, 0)], backupDirectory: store);
+
+        var backups = Directory.GetFiles(store, "a.json.ultrawidestash-*.bak");
 
         var backup = Assert.Single(backups);
         Assert.Equal(original, File.ReadAllText(backup));
@@ -179,7 +182,9 @@ public class ProfileStoreTests : IDisposable
     {
         var path = Write("a.json", ("i1", 14, 3));
 
-        ProfileStore.ApplyChanges(path, [new StashRepack.Move("i1", 14, 3, 0, 0)]);
+        ProfileStore.ApplyChanges(
+            path, [new StashRepack.Move("i1", 14, 3, 0, 0)],
+            backupDirectory: Path.Combine(_dir, "backups"));
 
         Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
     }
@@ -207,7 +212,7 @@ public class ProfileStoreTests : IDisposable
         var plan = StashRepack.For(before.Items, 10, 68);
         Assert.True(plan.Complete);
 
-        ProfileStore.ApplyChanges(path, plan.Moves);
+        ProfileStore.ApplyChanges(path, plan.Moves, backupDirectory: Path.Combine(_dir, "backups"));
 
         var after = ProfileStore.Read(path, OneByOne)!;
 

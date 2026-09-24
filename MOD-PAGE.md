@@ -35,8 +35,9 @@ empty beside it. This widens the stash panel and fills them. On 3440x1440 that's
 ## ⚠️ Back up your profile first
 
 Changing the shape of your stash means moving items, so **this mod rewrites your profile
-file**. It takes a timestamped `.bak` before every change and hands the result to SPT to
-save — but it's a young mod, and anything that rewrites a profile
+file**. It takes a backup before every change (your original plus the two most recent,
+kept in `%LOCALAPPDATA%\UltrawideStash\backups` so they stay out of your profiles folder)
+and hands the result to SPT to save — but it's a young mod, and anything that rewrites a profile
 can damage one. **Copy `SPT_Runtime/user/profiles` somewhere safe before your first
 start.**
 
@@ -55,7 +56,8 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - **Same capacity by default** — wider and shorter, not extra storage. Set
   `compensateRows: false` in the config to keep every row.
 - **Every edition**, hideout stash upgrades included.
-- Items that no longer fit get packed back in; items that already fit are never shuffled.
+- Items that no longer fit get packed back in; items that already fit are never shuffled
+  — including anything in extra rows from a stash-rows bonus.
 - Sizes itself to your screen. You can set `columns` by hand in
   `ultrawidestash.config.json`, capped at what your monitor can show.
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
@@ -67,7 +69,8 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 1. In `ultrawidestash.config.json`, set `"columns": 10` — the number, not `"auto"`.
 2. **Start the server once** and let it finish loading. It packs everything back into a
    vanilla stash, backing up your profile first.
-3. Delete the files.
+3. Delete the files — and, once you're happy with your stash, the backups folder at
+   `%LOCALAPPDATA%\UltrawideStash`.
 
 **If you just delete it instead**, your stash snaps back to 10 columns and the game moves
 anything in columns 11+ to your **sorting table** — check there first. Anything it misses

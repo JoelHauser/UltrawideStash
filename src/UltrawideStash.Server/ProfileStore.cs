@@ -27,7 +27,7 @@ namespace UltrawideStash.Server;
 ///
 /// ## Writing someone's profile is not done lightly
 ///
-/// Every write takes a timestamped backup alongside first, goes to a temporary file, and
+/// Every write takes a backup first (see <see cref="BackupStore"/>), goes to a temporary file, and
 /// only then replaces the original. Only <c>location.x</c>, <c>location.y</c> and
 /// <c>location.r</c> of items the caller named are touched; the document is otherwise
 /// round-tripped through <c>JsonNode</c> untouched. If any step throws, nothing is
@@ -212,7 +212,8 @@ public static class ProfileStore
         string path,
         IReadOnlyList<StashRepack.Move> moves,
         string? sortingTableId = null,
-        IReadOnlyList<StashRepack.Transfer>? transfers = null)
+        IReadOnlyList<StashRepack.Transfer>? transfers = null,
+        string? backupDirectory = null)
     {
         var hasTransfers = transfers is { Count: > 0 } && !string.IsNullOrEmpty(sortingTableId);
 
@@ -266,7 +267,10 @@ public static class ProfileStore
 
         if (written == 0) return 0;
 
-        Backup(path);
+        BackupStore.Backup(
+            path,
+            backupDirectory ?? BackupStore.DirectoryFor(
+                System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!));
 
         var temp = path + ".ultrawidestash.tmp";
 
@@ -280,18 +284,6 @@ public static class ProfileStore
         File.Delete(temp);
 
         return written;
-    }
-
-    /// <summary>
-    /// Copies the profile file aside before anything changes it. A timestamp rather than
-    /// a fixed name so a second run cannot overwrite the copy taken before the first.
-    /// Throws if the copy fails, and callers treat that as "change nothing".
-    /// </summary>
-    public static void Backup(string path)
-    {
-        var backup = $"{path}.ultrawidestash-{DateTime.UtcNow:yyyyMMdd-HHmmss}.bak";
-
-        File.Copy(path, backup, overwrite: false);
     }
 
     /// <summary>

@@ -921,7 +921,32 @@ state -- but unbounded growth is a bug. **17 relocation events in one debugging 
 each a full 380-730 KB profile copy.
 
 Worth keeping: one `-original.bak` that is never overwritten, plus the two most recent.
-**Not built yet.**
+
+**Built 2026-09-23 and folded into a re-release of 1.0.2** (11 files, 5.5 MB on the live
+install by then), and at the user's request the backups **left the profiles folder** for
+local AppData.
+`BackupStore` owns all of it:
+
+- **Where:** `%LOCALAPPDATA%\UltrawideStash\backups\<install>` (`~/.local/share/...` on
+  Linux). `<install>` is the install's folder name plus a 10-hex hash of the full profile
+  path, e.g. `SPT4.1.X-1a2b3c4d5e`, with a `where-from.txt` naming the profiles folder.
+  One folder per install because **copied SPT folders share profile ids** -- a shared
+  folder would let a copy find the other install's `-original.bak` and never take its
+  own. No AppData (empty path) -> the profiles folder, pruned the same way.
+- **What:** a profile's first backup becomes `<profile>.json.ultrawidestash-original.bak`,
+  never overwritten; timestamped copies are pruned to `RecentKept` (2) after each new one.
+- **Migration:** `BackupStore.TidyAll` runs on every start, from `StashWidener`, calling
+  `Tidy` for every profile that has backups anywhere -- **including deleted profiles**,
+  whose backups nothing else would ever look for. Profiles themselves are never touched. It moves `-original.bak` and `yyyyMMdd-HHmmss.bak` files out of the
+  profiles folder (a same-named file already in the store wins, and the old one stays),
+  renames the oldest timestamped copy to the original if there is none, then deletes all
+  but the newest two. `repair-stash.ps1`'s `-repair-` copies are the player's and stay.
+- **Tests must pass `backupDirectory`** to `ProfileStore.ApplyChanges`: the default is the
+  real AppData, and a test run would litter it. `BackupRetentionTests` pins the rest.
+- The uninstall note names the folder, because deleting the mod leaves it behind.
+
+Not ours to cap: SPT's own `user/profiles/backups` (97 MB here) is bounded by
+`maxBackups: 15` in `SPT_Data/configs/backup.json`.
 
 ## The mod was hiding a vanilla layout bug
 

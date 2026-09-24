@@ -110,9 +110,10 @@ After a manual install, check the server DLL really landed at
 A server mod in the wrong folder is not loaded and **says nothing about it** — the stash
 simply stays 10 wide.
 
-> **Back up `SPT_Runtime\user\profiles` first.** The mod takes its own `.bak` before
-> it edits anything, and it is built so that removing it cannot strand an item — but it
-> does write to your profile, and a backup you took yourself is worth having anyway.
+> **Back up `SPT_Runtime\user\profiles` first.** The mod takes its own backup before
+> it edits anything (kept in `%LOCALAPPDATA%\UltrawideStash\backups`, not in your SPT
+> folder), and it is built so that removing it cannot strand an item — but it does write
+> to your profile, and a backup you took yourself is worth having anyway.
 
 ## Configure
 
@@ -372,13 +373,25 @@ the new positions into the profile.
 - Only if something fits neither — an item more than 7 cells wide, which is to say never
   — does it **change nothing at all** for that stash and say so in the log. It will never
   apply a size that hides an item.
-- Every profile it edits gets a timestamped `.bak` alongside it first, and the original
-  is only replaced on the last step, so a failure part-way leaves the file untouched.
+- The grid it packs into is the one SPT and the game actually use: the template's rows
+  **plus the profile's own `StashRows` bonus**, as SPT's `GetPlayerStashSize` adds it.
+  Before 1.0.2 the bonus was ignored, and anything kept in those last rows was moved
+  back up on every server start — pinned, locked or not.
+- Every profile it edits is backed up first, and the original is only replaced on the
+  last step, so a failure part-way leaves the file untouched. Backups live outside SPT, in
+  `%LOCALAPPDATA%\UltrawideStash\backups\<install>` (the server log and
+  `HOW-TO-UNINSTALL.txt` give the exact folder). Each profile keeps
+  `<profile>.json.ultrawidestash-original.bak` -- the profile before the mod first changed
+  it, never overwritten -- plus the two most recent timestamped `.bak` files. Backups older
+  versions left in `user/profiles` — including those of profiles since deleted — are
+  moved there and trimmed on the next server start. The profiles themselves are never
+  touched by this.
 
-This is possible because of an ordering detail: the mod runs at `PostLoad`, and SPT's
-`SaveCallbacks` — which loads profiles — sits at the default priority of `int.MaxValue`
-and runs later. The files are edited *before* the server reads them, so there is no
-second copy to reconcile.
+SPT has already loaded every profile by the time the mod runs (`SaveCallbacks` sits at
+`OnLoadOrder.SaveCallbacks`, before `PostLoad`), so a loaded profile is moved in memory
+and saved through SPT's own `SaveServer` — the file is edited directly only for a
+profile SPT did not load. Before 1.0.1 it edited only the file, and SPT's next save
+wrote the unmoved copy back over it.
 
 ### Installing, and updating
 
@@ -395,7 +408,9 @@ no relocation at all — and anything left over is relocated as above. Raising o
 **No — you cannot simply delete the mod.** There is one step first, and it takes one
 server start.
 
-**Set `columns` to `10`, start the server once, then delete the files.**
+**Set `columns` to `10`, start the server once, then delete the files.** The mod's
+profile backups are outside SPT, in `%LOCALAPPDATA%\UltrawideStash\backups` — delete
+that folder too once you are happy with your stash.
 
 Use the number `10`, **not `"auto"`** — auto means "as wide as this screen allows",
 which is the opposite of what an uninstall needs.
@@ -508,7 +523,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-174 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
+186 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
 `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by

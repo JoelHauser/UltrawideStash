@@ -61,9 +61,14 @@ public class StashWidener(
     JsonUtil jsonUtil)
     : IOnLoad
 {
+    /// <summary>Where this install's profile backups go -- see <see cref="BackupStore"/>.</summary>
+    private string backupDirectory = string.Empty;
+
     public async Task OnLoadAsync(CancellationToken cancellationToken)
     {
         var folder = ModFolder();
+
+        backupDirectory = BackupStore.DirectoryFor(ProfileDirectory());
 
         var settings = StashSettings.Load(
             System.IO.Path.Combine(folder, "ultrawidestash.config.json"),
@@ -114,6 +119,8 @@ public class StashWidener(
             settings.IgnoreMeasurement);
 
         WriteUninstallNote(folder);
+
+        TidyBackups();
 
         var profiles = ReadProfiles(out var readable, out var why);
 
@@ -391,7 +398,7 @@ public class StashWidener(
                 {
                     // The copy the client is served and SPT will save. Backed up first,
                     // exactly as the file path is, then moved in place.
-                    ProfileStore.Backup(profile.FilePath);
+                    BackupStore.Backup(profile.FilePath, backupDirectory);
 
                     written = ProfileStore.ApplyToItems(
                         items, moves, profile.SortingTableId, transfers);
@@ -401,7 +408,8 @@ public class StashWidener(
                 else
                 {
                     written = ProfileStore.ApplyChanges(
-                        profile.FilePath, moves, profile.SortingTableId, transfers);
+                        profile.FilePath, moves, profile.SortingTableId, transfers,
+                        backupDirectory);
                 }
 
                 moved += written;
@@ -413,8 +421,8 @@ public class StashWidener(
 
                 logger.Info(
                     $"[UltrawideStash] Moved {where} in "
-                    + $"'{System.IO.Path.GetFileName(profile.FilePath)}' (a .bak was written "
-                    + "alongside it).");
+                    + $"'{System.IO.Path.GetFileName(profile.FilePath)}' (backed up first, to "
+                    + $"{backupDirectory}).");
             }
             catch (Exception e)
             {
@@ -588,6 +596,49 @@ public class StashWidener(
     }
 
     /// <summary>
+    /// Every profile's backups out of the profiles folder and down to its original plus
+    /// the newest few -- see <see cref="BackupStore"/>. Run on every start, not only when
+    /// something is moved, so what older versions left behind is cleared even on a
+    /// profile that is never relocated again. Best effort: a failure here must never stop
+    /// the mod.
+    /// </summary>
+    private void TidyBackups()
+    {
+        var moved = 0;
+        var deleted = 0;
+
+        try
+        {
+            // Every profile with backups, deleted ones included -- see BackupStore.TidyAll.
+            var tidied = BackupStore.TidyAll(ProfileDirectory(), backupDirectory);
+
+            moved = tidied.Moved;
+            deleted = tidied.Deleted;
+        }
+        catch (Exception e)
+        {
+            logger.Warning(
+                $"[UltrawideStash] Could not tidy profile backups ({e.Message}). They are left "
+                + "as they are, and the next start tries again.");
+        }
+
+        if (moved > 0)
+        {
+            logger.Info(
+                $"[UltrawideStash] Moved {moved} profile backup(s) out of the profiles folder, "
+                + $"to {backupDirectory}.");
+        }
+
+        if (deleted > 0)
+        {
+            logger.Info(
+                $"[UltrawideStash] Removed {deleted} old profile backup(s). Each profile keeps "
+                + "its .ultrawidestash-original.bak and the "
+                + $"{BackupStore.RecentKept} most recent, in {backupDirectory}.");
+        }
+    }
+
+    /// <summary>
     /// SPT's profile folder, from <c>SaveServer</c>'s own private <c>profileFilepath</c>
     /// where it can be read, else the literal <c>user/profiles</c> that
     /// <c>SaveServer.RemoveProfile</c> uses, relative to the server's directory.
@@ -662,9 +713,11 @@ public class StashWidener(
             "using, start the server, and everything will be exactly where you left it.",
             "Then follow the steps above.",
             "",
-            "Profile backups this mod has taken are named like:",
-            "  <profile>.json.ultrawidestash-<timestamp>.bak",
-            "and live beside your profiles in SPT_Runtime/user/profiles.",
+            "Profile backups this mod has taken are kept in:",
+            $"  {backupDirectory}",
+            "one <profile>.json.ultrawidestash-original.bak per profile (before the mod",
+            "first changed it) plus the two most recent. That folder is outside SPT, so",
+            "deleting the mod leaves it behind: delete it too once you are happy.",
             "",
         ]);
 
