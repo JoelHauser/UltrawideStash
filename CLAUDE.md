@@ -755,6 +755,15 @@ the profiles folder`, or names `AppData\Local\UltrawideStash` in a `Moved ... ba
 inside` line.
 
 
+### 1.0.3, released 2026-09-24 -- the stash is wide on the transfer screens too
+
+The scav loot transfer, the mail transfer and the hideout area transfer now widen their
+stash panels, clear of their buttons; and only the character screen measures for the
+server. See *The transfer screens (1.0.3)*. A new version rather than an in-place
+re-release, at the user's request. Tagged `v1.0.3`, `UltrawideStash_V1.0.3.zip`, DLLs
+stamped `1.0.3+be86eb4`. 196 logic tests, 19 database checks. Verified in game on the
+mail screen only; the scav and hideout screens had not run when it shipped.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
