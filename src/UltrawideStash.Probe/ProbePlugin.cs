@@ -36,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.2";
+        public const string PluginVersion = "1.0.3";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -73,6 +73,12 @@ namespace UltrawideStash.Probe
         /// </summary>
         private ConfigEntry<float> _reserve;
 
+        /// <summary>
+        /// Whether the scav loot transfer and the mail transfer screens get a wider
+        /// stash panel too. See <see cref="ScreenWiden"/>.
+        /// </summary>
+        private ConfigEntry<bool> _widenTransfers;
+
         private void Awake()
         {
             _log = Logger;
@@ -95,7 +101,18 @@ namespace UltrawideStash.Probe
                 + "own 16:9 layout gives them about 600. Below 520 the character doll "
                 + "starts to clip.");
 
+            _widenTransfers = Config.Bind(
+                "Layout",
+                "WidenTransferScreens",
+                true,
+                "Also widen the stash panel on the scav loot transfer after a raid, on the "
+                + "screen for receiving items from mail, and on the hideout screen for putting "
+                + "items into an area. It grows into the empty space beside the screen and "
+                + "stays clear of the buttons along the bottom.");
+
             if (_widen.Value) StashMeasure.Widen = _reserve.Value;
+
+            ScreenWiden.Enabled = _widenTransfers.Value;
 
             GameTypes.Resolve();
 
@@ -160,9 +177,14 @@ namespace UltrawideStash.Probe
         /// Loot In Vicinity's Nearby Items instead of the stash. None of those are
         /// the stash, and the mod has no business changing them.
         /// </summary>
-        private static void BeforeItemsShow(object[] __args)
+        private static void BeforeItemsShow(MonoBehaviour __instance, object[] __args)
         {
             if (!GameTypes.InRaid(__args, GameTypes.ItemsPanelShowInRaid)) return;
+
+            // The scav loot transfer shows its own ItemsPanel with inRaid true, back in
+            // the menu after the raid. It is not the character screen and not a raid.
+            Component screen;
+            if (ScreenWiden.Identify(__instance, out screen) == StashScreen.ScavTransfer) return;
 
             _pending = null;
 
@@ -190,6 +212,31 @@ namespace UltrawideStash.Probe
         /// </summary>
         private static void AfterStashShow(MonoBehaviour __instance, object[] __args)
         {
+            // Which screen first, because the scav loot transfer passes inRaid true
+            // and would otherwise be taken for a crate.
+            Component screen;
+            var kind = ScreenWiden.Identify(__instance, out screen);
+
+            switch (kind)
+            {
+                case StashScreen.ScavTransfer:
+                case StashScreen.MailTransfer:
+                case StashScreen.HideoutTransfer:
+                    ScreenWiden.Begin(
+                        __instance,
+                        kind,
+                        screen,
+                        GameTypes.FirstGridWidth(__args != null && __args.Length > 0 ? __args[0] : null),
+                        Say);
+                    return;
+
+                // A trader, prestige or the in-raid transit screen.
+                // Nothing to widen, and measuring one of them would hand the server
+                // a panel that is not the character screen's.
+                case StashScreen.Other:
+                    return;
+            }
+
             if (GameTypes.InRaid(__args, GameTypes.SimpleStashPanelShowInRaid))
             {
                 _pending = null;
@@ -216,6 +263,8 @@ namespace UltrawideStash.Probe
         /// </summary>
         private void Update()
         {
+            ScreenWiden.Tick(Say);
+
             if (_pending == null) return;
 
             // Gone before we measured -- the player closed the screen immediately.

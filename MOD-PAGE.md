@@ -60,6 +60,10 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
   — including anything in extra rows from a stash-rows bonus.
 - Sizes itself to your screen. You can set `columns` by hand in
   `ultrawidestash.config.json`, capped at what your monitor can show.
+- **Wide on the transfer screens too** — the scav loot transfer after a raid, receiving
+  items from mail, and putting items into a hideout area. The stash grows into the empty
+  space beside the screen and **never covers the buttons** (Next, Sell All, Receive All
+  and the rest). Turn it off with `WidenTransferScreens` in the BepInEx config.
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
   crates, bodies and loot panels are left alone. The stash widens again when you're back
   in the menu.

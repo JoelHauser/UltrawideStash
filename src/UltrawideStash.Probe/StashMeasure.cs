@@ -170,6 +170,21 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
+        /// The ancestor chain from <paramref name="from"/>, without the report. For
+        /// <see cref="ScreenWiden"/>, which finds its panel and chrome the same way.
+        /// </summary>
+        internal static Chain ChainOf(RectTransform from, Canvas canvas)
+        {
+            return AppendChain(new StringBuilder(), from, canvas);
+        }
+
+        /// <summary>The stash's GridView, or null until it is built.</summary>
+        internal static Component StashGridView(MonoBehaviour panel)
+        {
+            return FindStashGridView(panel);
+        }
+
+        /// <summary>
         /// The GridView drawing the stash itself.
         ///
         /// The stash screen holds more than one: opening a container adds its own.

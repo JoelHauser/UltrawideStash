@@ -367,10 +367,12 @@ src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the
   StashWiden.cs       narrows LeftSide, grows Stash Panel, and puts both back for a raid
   MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
+  ScreenLayout.cs     transfer-screen planner -- pure, also compiled into the tests
+  ScreenWiden.cs      scav/mail/hideout transfer screens: identify, map, grow, check
   ProbePlugin.cs      BepInPlugin; postfix on SimpleStashPanel.Show, prefix on
                       ItemsPanel.Show, both gated on the game's inRaid flag
 
-tests/UltrawideStash.Server.Tests/    xunit, 162 tests
+tests/UltrawideStash.Server.Tests/    xunit, 196 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
   RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
@@ -380,6 +382,7 @@ tests/UltrawideStash.Server.Tests/    xunit, 162 tests
   StashRepackTests.cs           relocation, including the narrow-to-vanilla path
   ProfileStoreTests.cs          read/write round trips against real files on disk
   SortingTableOverflowTests.cs  the 7-wide overflow, end to end through a profile
+  ScreenLayoutTests.cs          the transfer-screen planner; links the probe's ScreenLayout.cs
 
 scripts/
   pack.ps1            build both halves, test, check references, stage, zip, install
@@ -852,10 +855,13 @@ Read off the patched assembly -- every type carrying a `SimpleStashPanel` field:
 | --- | --- |
 | `EFT.UI.ItemsPanel` (`InventoryScreen`) -- the character screen | **yes** |
 | `EFT.UI.TraderDealScreen` | no |
-| `EFT.UI.TransferItemsScreen` | no |
-| `EFT.UI.ScavengerInventoryScreen` | no |
-| `UI.Hideout.BaseHideoutAreaTransferItemsScreen<,>` | no |
+| `EFT.UI.TransferItemsScreen` | **yes, from 1.0.3** |
+| `EFT.UI.ScavengerInventoryScreen` | **yes, from 1.0.3** |
+| `UI.Hideout.BaseHideoutAreaTransferItemsScreen<,>` | **yes, from 1.0.3** |
 | `EFT.UI.PrestigeTransferItemsState` | no |
+
+The three 1.0.3 rows are `ScreenWiden`, not `StashWiden` -- see *The transfer screens*.
+Everything below this table up to that section describes 1.0.2 and earlier.
 
 To re-derive it, walk `MainModule.GetTypes()` and print every `FieldDefinition` whose
 `FieldType.FullName` matches `SimpleStashPanel`. The instruction-operand sweep for the
@@ -1067,3 +1073,84 @@ LIV 3.0.0 also fails two of its own patches at startup on 4.1.6
 `OperationResult` vs `OperationResult<IItemOperationResult>` on
 `ItemUiContext.QuickFindAppropriatePlace`). Nothing to do with this mod, but it is the
 first thing to suspect for quick-move trouble from that panel.
+
+
+## The transfer screens (1.0.3)
+
+Asked for 2026-09-24 off a screenshot of the scav loot transfer: a 19-wide grid in the
+vanilla 680 px panel, with a horizontal scrollbar, and the explicit instruction to mind
+the Next / Back / Sell All buttons. Mail and the hideout area transfer followed.
+
+### Why each screen was vanilla
+
+- **Scav loot transfer.** `ScavengerInventoryScreen.Show` calls
+  `_itemsPanel.Show(..., inRaid: true, ...)`, and `ItemsPanel.Show` hands that to
+  `SimpleStashPanel.Show`. The in-raid guard read it as a crate. The screen only ever
+  appears back in the menu after a raid. It shares no objects with the character screen:
+  it has its own `ItemsPanel`, with its own `LeftSide`.
+- **Mail.** `TransferItemsScreen.Show` passes `inRaid: false`, so the old path ran and
+  `StashWiden.Apply` said `cannot widen: no 'LeftSide'`.
+- **Hideout area transfer.** Also `inRaid: false`, also no `LeftSide`.
+
+### The measurement leak it exposed
+
+`Report` ran on **every** non-raid stash panel and wrote the first one it met at a
+resolution into `ultrawidestash.measured.json`. Open mail (or a trader) before the
+character screen in a session and the server was handed a 680 px panel -- 10 columns.
+`ScreenWiden.Identify` now routes by screen: the three transfer screens go to
+`ScreenWiden`, traders / prestige / the in-raid transit screen do nothing at all, and
+only the character screen (or an unrecognised screen, as before) measures.
+
+### How it works
+
+These screens sit in a 16:9 frame in the middle of the canvas with ~330 px empty either
+side at 3440x1440, and their button positions are prefab data. So there is no recipe;
+`ScreenWiden.Arrange` maps the live screen and `ScreenLayout.Plan` grows into free space:
+
+- **Obstacles** are found by walking the screen root: a node that holds the panel or
+  already overlaps it is recursed into (a frame or background); a node that overlaps
+  nothing and draws something (`UnityEngine.UI.Graphic` in its subtree, checked by type
+  name -- the probe does not reference UnityEngine.UI) is an obstacle whole.
+- **Grow right first**, to the canvas edge less 12 px, then left, snapped to whole
+  columns (`chrome + ScrollSlack` on top of the grid).
+- **The nearest obstacle on the left may slide left**, keeping its size, into its own
+  margin -- only if it is a plain sibling on the panel's ancestor chain, not a button,
+  not layout-driven, and the slide puts no already-overlapping obstacle (Next over the
+  containers column) over an inner graphic it was clear of.
+- **Buttons are never moved or covered.** A button whose top is within 96 px of the
+  panel's bottom is cleared by raising the panel's bottom edge (`offsetMin.y`); anything
+  taller blocks. `NoButtonPositionEverEndsUnderThePanel` sweeps it.
+- Every open restores vanilla first, then plans, so it is idempotent. Offsets are
+  applied through `offsetMin`/`offsetMax` (anchor-agnostic) and the result is measured
+  back; a mismatch over 2 px restores vanilla.
+- Planned once at `Show` (after `Canvas.ForceUpdateCanvases`) so the first frame is wide,
+  again after 3 frames with the grid's measured chrome, then a CHECK; one overflow gets
+  one corrective re-plan.
+- **Hideout only:** a tab change swaps the area grid (`UpdateAreaStashView` destroys and
+  recreates the `ContainedGridsView` under `_parent`) without re-showing the stash, and
+  the filter window (`_handoverItemsWindow`) opens beside it. While the screen is open a
+  signature of both is taken every 15 frames and a change re-plans. Tabs are re-parented
+  on that screen, so obstacles keep direct `RectTransform` refs, not paths.
+- Config `WidenTransferScreens` (default true) turns all of it off.
+
+### Verified, and not
+
+- **Mail: verified in game 2026-09-24** on 3440x1440: `684 -> 1250 px (19 columns),
+  bottom edge up 57 px to clear the buttons`, `CHECK ... fits, 4.0 px spare`,
+  `buttons clear of the panel: AcceptButton, ReceiveAllButton`. ReceiveAllButton sits at
+  x -150..150 (canvas centred on 0), top -349, just under the panel's bottom-left.
+  `Left Person` (the transfer grid) was marked may-slide and did not need to.
+- **Scav loot transfer and hideout area transfer: not yet run in game** at release. The
+  tests use scav geometry read off the user's screenshot (LeftSide slides ~252 px, bottom
+  up ~38 px for Next); the real block is `===== scav loot transfer: stash panel =====`.
+- The screen's dark 16:9 backdrop is not widened, so on the scav screen the panels can
+  extend past it. Cosmetic; not changed.
+
+### Traps from this one
+
+- **Folding the scroll slack into "columns shown now" called the vanilla 680 px panel 9
+  columns**, so a 10-wide grid would have been "widened". Caught by
+  `APanelThatAlreadyShowsTheGridIsLeftAlone` before it shipped. Slack applies to the
+  grown size only; the vanilla panel is 632 px of viewport round a 631 px grid.
+- **A `sed 's/ -- / — /g'` over README.md** to match its dash style also rewrote two
+  quoted log lines. Edit the new text, not the file.

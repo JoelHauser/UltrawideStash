@@ -109,6 +109,14 @@ namespace UltrawideStash.Probe
         internal static PropertyInfo GridLayout { get; private set; }
 
         /// <summary>
+        /// <c>EFT.InventoryLogic.CompoundItem.Grids</c>, a public <c>Grid[]</c>.
+        /// Optional: it gives the stash's width at <c>Show</c>, before any GridView
+        /// exists, so the scav and mail screens can be sized on their first frame.
+        /// Without it they are sized a few frames later instead.
+        /// </summary>
+        internal static FieldInfo CompoundItemGrids { get; private set; }
+
+        /// <summary>
         /// Resolve everything. Safe to call more than once; only the first call does
         /// any work.
         /// </summary>
@@ -193,6 +201,10 @@ namespace UltrawideStash.Probe
                 OutOfBoundsItems = AccessTools.Property(grid, "OutOfBoundsItems");
                 GridLayout = AccessTools.Property(grid, "Layout");
 
+                var compound = AccessTools.TypeByName("EFT.InventoryLogic.CompoundItem");
+
+                if (compound != null) CompoundItemGrids = AccessTools.Field(compound, "Grids");
+
                 Ready = true;
             }
             catch (Exception e)
@@ -232,6 +244,29 @@ namespace UltrawideStash.Probe
             if (args == null || index < 0 || index >= args.Length) return true;
 
             return !(args[index] is bool inRaid) || inRaid;
+        }
+
+        /// <summary>
+        /// Width of an item's first grid -- the stash's own -- or 0 when it cannot be
+        /// read. Never throws.
+        /// </summary>
+        internal static int FirstGridWidth(object compoundItem)
+        {
+            try
+            {
+                if (compoundItem == null || CompoundItemGrids == null) return 0;
+                if (!CompoundItemGrids.DeclaringType.IsInstanceOfType(compoundItem)) return 0;
+
+                var grids = CompoundItemGrids.GetValue(compoundItem) as Array;
+
+                if (grids == null || grids.Length == 0 || grids.GetValue(0) == null) return 0;
+
+                return (int)GridWidth.GetValue(grids.GetValue(0), null);
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private static void Fail(string why)

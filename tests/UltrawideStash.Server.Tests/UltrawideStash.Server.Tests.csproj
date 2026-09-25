@@ -28,4 +28,13 @@
     <ProjectReference Include="..\..\src\UltrawideStash.Server\UltrawideStash.Server.csproj" />
   </ItemGroup>
 
+  <!--
+    The probe's layout planner, compiled in directly. The probe is net472 against the
+    game's Unity assemblies and cannot be referenced from here, but this one file is
+    pure arithmetic with no engine type in it, which is what makes it testable.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\UltrawideStash.Probe\ScreenLayout.cs" Link="Probe\ScreenLayout.cs" />
+  </ItemGroup>
+
 </Project>

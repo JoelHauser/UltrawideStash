@@ -83,7 +83,7 @@ is for.
 | | Goes to | Does |
 | --- | --- | --- |
 | `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width, and keeps stored items inside it |
-| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Widens the stash panel in the menu (never in raid), measures it, and writes it down for the server |
+| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Widens the stash panel in the menu (never in raid) — on the character screen, the scav loot transfer, receiving mail items and hideout area transfers — measures the character screen's, and writes it down for the server |
 | `repair-stash.ps1` | `SPT_Runtime/user/mods/UltrawideStash/` | Standalone recovery. Needs only PowerShell — not the mod |
 
 The server half also writes two files into its own folder on first start:
@@ -174,6 +174,40 @@ reads every profile at startup, works out the real footprint of each stored item
 flat, it goes up — losing an item is not an acceptable price for a tidy number.
 
 **`verbose`** — log every stash's before and after rather than one summary line.
+
+### Client settings
+
+`BepInEx/config/com.mybutthasarash.ultrawidestash.cfg`, section `[Layout]`:
+
+- **`WidenStashPanel`** (`true`) — narrow the gear side of the character screen and
+  give the width to the stash panel.
+- **`GearPanelReserve`** (`620`) — canvas px each gear panel keeps when it does.
+- **`WidenTransferScreens`** (`true`, new in 1.0.3) — also widen the stash panel on the
+  scav loot transfer after a raid, on the screen for receiving mail items, and on the
+  hideout screen for putting items into an area.
+
+### The other screens that show your stash (1.0.3)
+
+The grid is one item, so it is the same width on every screen that draws it. Up to
+1.0.2 only the character screen's panel was widened, and everywhere else a 19-wide grid
+sat in the vanilla 680 px panel behind a horizontal scrollbar. The scav loot transfer
+was skipped outright: the game shows it with its in-raid flag set, although it only ever
+appears back in the menu.
+
+These screens are not laid out like the character screen, and where their buttons sit
+is prefab data the game's code does not carry. So the probe measures the screen as it is
+drawn and grows the panel only into space nothing occupies: right first, into the empty
+canvas beside the screen's 16:9 frame, then left. A panel standing in the way on the
+left can slide into its own empty margin. **Buttons are never moved and never
+covered** — one that reaches into the bottom of the panel's span (Next on the scav
+screen, Receive All on the mail screen) is cleared by bringing the panel's bottom edge
+up, by at most a row and a half, and one beside the panel stops it growing. The hideout
+screen is re-planned whenever a tab change swaps the area's grid or the filter window
+opens.
+
+Traders, prestige and the in-raid transit transfer are left vanilla. Nothing measured on
+any screen but the character screen is written for the server — before 1.0.3, the first
+stash panel opened at a resolution was measured whichever screen it was on.
 
 ### Every row is full width
 
@@ -523,7 +557,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-186 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
+196 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
 `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
