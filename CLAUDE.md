@@ -767,6 +767,16 @@ re-release, at the user's request. Tagged `v1.0.3`, `UltrawideStash_V1.0.3.zip`,
 stamped `1.0.3+be86eb4`. 196 logic tests, 19 database checks. Verified in game on the
 mail screen only; the scav and hideout screens had not run when it shipped.
 
+### 1.0.4, released 2026-09-28 -- the panel stops at the grid, and the server says why
+
+From Forge issue #1 (a 5120x1440 player stuck at 10 columns, no logs). The character
+screen's panel stops at the grid's width; the measurement records the room there is plus
+`canWiden`/`whyNot`; the server warns with the reason and points at EFT's resolution on a
+16:9 menu. See *32:9, the grid cap, and saying why (1.0.4)*. Tagged `v1.0.4`,
+`UltrawideStash_V1.0.4.zip`, DLLs stamped `1.0.4+92e252d`. 226 logic tests, 19 database
+checks. **32:9 was simulated on a 3440x1440 display, not run on a 32:9 monitor**, and
+the release notes say so -- a physical-monitor run is still owed.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
