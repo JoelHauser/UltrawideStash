@@ -6,6 +6,9 @@
   the reasoning; this is for someone deciding whether to download it. When a release
   changes what a player sees, change both.
 
+  The Forge shows the word "Tarkov" as "T*****", so say "EFT" instead. The page also
+  came through without the screen table once, so the screens are a plain list.
+
   Before posting: drop a screenshot in where the comment says, and fill the page's
   short-description field with --
     "ULTRAWIDE ONLY. Widens the stash to fill a 21:9 or 32:9 monitor. Does nothing
@@ -14,7 +17,7 @@
 
 # ⚠️ ULTRAWIDE MONITORS ONLY
 
-**On a 16:9 monitor this does nothing.** Tarkov scales its menu by height, so 1080p,
+**On a 16:9 monitor this does nothing.** EFT scales its menu by height, so 1080p,
 1440p and 4K all get the same width to work with and none of it is spare. 16:10 too.
 You need a screen wider than 16:9 for there to be any room to fill.
 
@@ -26,11 +29,11 @@ empty beside it. This widens the stash panel and fills them. On 3440x1440 that's
 
 <!-- screenshot goes here -->
 
-| Your screen | You get |
-| --- | --- |
-| 1920x1080, 2560x1440, 3840x2160 (16:9) | 10 columns — nothing changes |
-| 2560x1080, 3440x1440 (21:9) | 19 columns |
-| 5120x1440 (32:9) | 39 columns |
+**What you get:**
+
+- **16:9** (1920x1080, 2560x1440, 3840x2160) — 10 columns, nothing changes
+- **21:9** (2560x1080, 3440x1440) — 19 columns
+- **32:9** (5120x1440) — 39 columns (simulated so far, see the bottom of this page)
 
 ## ⚠️ Back up your profile first
 
