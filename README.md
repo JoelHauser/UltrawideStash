@@ -8,10 +8,11 @@ the stash where **UIScale.Reloaded** was also installed, as it was on the develo
 machine. That mod stretches EFT's inventory screen, which vanilla keeps as a fixed 16:9
 frame in the middle of the monitor. 1.0.5 does that stretch itself. It has been played
 on SPT 4.1.6 at 3440x1440, with UIScale.Reloaded and without it: a 19x36 stash in a
-widened panel, with no scrollbar and no dead space. **32:9 (5120x1440) has only been
-simulated** (on a 3440x1440 display: a 39-column stash filling the screen). It still
-needs a run on a physical 32:9 monitor. See [Status](#status) for what has and has not
-been checked.
+widened panel, with no scrollbar and no dead space. **32:9 (5120x1440) has been run on a
+physical monitor** by a player on 1.0.5: the inventory stretched to the full width, and
+with `GearPanelReserve` at its default the stash filled it. That is their report and
+screenshots; their log was not seen. See [Status](#status) for what has and has not been
+checked.
 
 **On a 16:9 monitor this mod does nothing, and that is deliberate.** 1080p, 1440p and 4K
 all get exactly the same canvas width and none of them have room to spare — see
@@ -192,7 +193,11 @@ flat, it goes up — losing an item is not an acceptable price for a tidy number
   the grid needs: if the grid is narrower than the room there is (after a resolution
   change, before the server restarts, or with `columns` set lower), the rest stays with
   the gear side instead of sitting as empty panel beside the grid.
-- **`GearPanelReserve`** (`620`) — canvas px each gear panel keeps when it does.
+- **`GearPanelReserve`** (`620`) — canvas px each gear panel keeps when it does. **Leave
+  it at 620** unless you want a narrower stash. Every px you add comes off the stash
+  panel, twice over: at 1000 a 5120x1440 screen gets 27 columns instead of 39. The
+  server reads this setting from the same file when it sizes the grid, and its log warns
+  when it isn't 620. Below 520 it is raised to 520, or the character doll clips.
 - **`WidenTransferScreens`** (`true`, new in 1.0.3) — also widen the stash panel on the
   scav loot transfer after a raid, on the screen for receiving mail items, and on the
   hideout screen for putting items into an area.
@@ -597,8 +602,13 @@ The usual cause is EFT itself running at a 16:9 resolution on a wider monitor. E
 menus are 1920 px wide at *every* 16:9 resolution, so there is nothing to widen into.
 Set EFT's resolution in *Settings → Graphics* to your monitor's own, open your stash
 once, and restart the server. A 32:9 monitor (5120×1440) gets a 3840 px wide menu and
-a 39-column stash. That was checked by simulating a 5120×1440 layout on a 3440×1440
-display (1.0.4). It has not yet been run on a physical 32:9 monitor.
+a 39-column stash. That was simulated on a 3440×1440 display for 1.0.4, and a player
+has since run 1.0.5 on a physical 32:9 monitor.
+
+The other cause is a changed **`GearPanelReserve`** in the BepInEx config. A higher
+value leaves the stash less room: at 1000 a 5120×1440 screen gets 27 columns instead of
+39. From 1.0.5 the server reads that setting when it predicts the width, and warns when
+it isn't 620.
 
 ## Building
 
@@ -658,13 +668,16 @@ Compatibility.
 - **The server's "could not widen" warning** (1.0.4) — seen in a player's server log.
   It gave the wrong advice there: it read the inventory screen's own 1920 px frame as the
   menu width, so it called a 3440x1440 screen 16:9. 1.0.5 reads the real canvas.
+- **A physical 32:9 monitor** (1.0.5, reported by a player) — at 5120x1440 the inventory
+  stretched to the full width. With `GearPanelReserve` at 1000 the panel held 27 columns
+  and a 39-wide grid scrolled sideways. Set back to 620, the stash filled the screen.
+  From screenshots and the player's word; their log was not seen.
 
 **Not yet verified**, in rough order of risk:
 
-- **A physical 32:9 monitor.** 5120x1440 was only simulated on a 3440x1440 display. The
-  simulation cannot cover the server reading 5120x1440 from EFT's saved settings on its
-  first start, or anything a real 32:9 display does that a scaled canvas does not.
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
+- **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
+  been seen in a live log.
 - **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same
   code as the mail screen, but have not been played through.
 - **A clean install with 1.0.5.** The stretch was verified with UIScale.Reloaded

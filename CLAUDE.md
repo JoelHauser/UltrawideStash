@@ -784,7 +784,7 @@ the release notes say so -- a physical-monitor run is still owed.
 **It also only widened anything on installs running UIScale.Reloaded**, like every
 version before it -- found the next day; see 1.0.5.
 
-### 1.0.5, pre-release 2026-09-29 -- it works without UIScale.Reloaded
+### 1.0.5, 2026-09-29 -- it works without UIScale.Reloaded
 
 From Forge issue #2 and AsianMuppet's clean 5120x1440 log: vanilla EFT's inventory
 screen is a fixed 16:9 frame, and the mod had only ever worked under UIScale.Reloaded's
@@ -794,6 +794,14 @@ UIScale.Reloaded (1.0.5)*. Published as a GitHub **pre-release** at the user's r
 so 1.0.4 stays "latest" until players confirm it. Tagged `v1.0.5`,
 `UltrawideStash_V1.0.5.zip`, DLLs stamped `1.0.5+e3f3c73`. 240 logic tests, 19 database
 checks.
+
+**Re-released in place and promoted to latest, the same day**, at the user's request,
+once a player had it working on a physical 5120x1440 monitor. The re-release adds the
+server reading `GearPanelReserve` (see *A physical 32:9 monitor, and the reserve the
+server now reads*) and replaces the "32:9 only simulated" caveat. The `v1.0.5` tag moved
+to the re-release commit and was force-pushed, and the zip and notes were replaced.
+Anyone with the pre-release zip has the stretch but not the reserve check. The server
+log tells them apart: only the re-release's `Width:` line names the probe config.
 
 ## Verified in game, 2026-09-21
 
@@ -1282,7 +1290,9 @@ should. Everything restored afterwards and hash-checked against the backup.
 cover: the server reading 5120x1440 from the registry (`ScreenProbe`) on a real first
 start, and anything about a real 32:9 display the faked canvas scale does not reproduce
 (the canvas was also 1607 tall, not 1080). It still needs a run on a physical monitor,
-and every release note has to say so.
+and every release note has to say so. **Superseded 2026-09-29:** a player ran 1.0.5 on
+a physical 5120x1440 monitor (see the end of *It only ever worked under
+UIScale.Reloaded*), and the user asked for the caveat to be replaced.
 That run also showed the overflow message's advice ("set columns to auto") was wrong
 when columns already was auto and the grid was merely sized for a wider screen; it now
 names both causes.
@@ -1379,5 +1389,27 @@ same widening, fits, no rewrite needed on either of two opens. 240 logic tests.
 **Test with UIScale off from now on**, or on a second install without it. The config
 switch is `[General] Enabled` in `BepInEx/config/com.vonbraunz.uiscale.reloaded.cfg`.
 
-Still not run: a physical 21:9 other than 3440x1440, a physical 32:9, and the server's
-ignore-old-measurement line in a live log.
+### A physical 32:9 monitor, and the reserve the server now reads
+
+Same day, a player's 1.0.5 run on a real 5120x1440 monitor, forwarded as screenshots
+(no log). The stretch worked -- the inventory filled the width. But the stash panel sat
+well right of the containers column and a 39-wide grid scrolled sideways. The panel
+measured off the screenshot was ~912 of 2000 display px at 2.56 screen px each, /1.333,
+so 1754 canvas px. That is exactly `WidenedColumns` with `GearPanelReserve` 1000 (27
+columns + 52 chrome + 1), against the default's 39. The same player's 1.0.4 log had said
+"keeps 2000 px", left over from trying settings. Set back to 620, it filled the screen.
+
+The server had predicted 39 from the resolution, not knowing the reserve; the probe then
+drew 27, so the first start scrolled and the next would have narrowed and repacked. So
+the server now reads the probe's own config (`ClientSettings`, from
+`<SPT>/BepInEx/config/com.mybutthasarash.ultrawidestash.cfg`, four levels up from the
+mod folder; the defaults when there is no file, as on a dedicated server). It predicts
+with that reserve (`StashFit.WidenedColumns(canvas, reserve)`, raised to 520 like the
+probe), predicts vanilla when `WidenStashPanel` is false, and warns when either is off
+default (`StashWidener.ClientSettingsWarning`), naming the columns it costs. A
+measurement still wins, since it is what the probe actually drew. `ClientSettingsTests`
+pins the tester's 27, and `StashPlanTests` holds plan and prediction together at six
+reserves. 265 logic tests.
+
+Still not run: a physical 21:9 other than 3440x1440, a clean install, and in a live log
+both the server's ignore-old-measurement line and its reserve warning.

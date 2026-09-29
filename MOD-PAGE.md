@@ -33,7 +33,7 @@ empty beside it. This widens the stash panel and fills them. On 3440x1440 that's
 
 - **16:9** (1920x1080, 2560x1440, 3840x2160) — 10 columns, nothing changes
 - **21:9** (2560x1080, 3440x1440) — 19 columns
-- **32:9** (5120x1440) — 39 columns (simulated so far, see the bottom of this page)
+- **32:9** (5120x1440) — 39 columns
 
 ## ⚠️ Back up your profile first
 
@@ -73,6 +73,10 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - **Stuck at 10 columns?** Look in the **server** log. If the game couldn't widen the
   stash, it says why there. The usual cause is EFT itself set to a 16:9 resolution on a
   wider monitor. Set EFT's resolution in *Settings → Graphics* to your monitor's own.
+- **Stash narrower than your screen, or scrolling sideways?** Check `GearPanelReserve`
+  in `BepInEx/config/com.mybutthasarash.ultrawidestash.cfg` is **620**. A higher number
+  leaves the stash less room: at 1000 a 32:9 screen gets 27 columns instead of 39. The
+  server log warns you when it's changed.
 
 # Uninstalling — set `columns` to 10 first
 
@@ -103,7 +107,6 @@ widened the stash if UIScale.Reloaded was installed as well. Without it, EFT kee
 inventory screen as a 16:9 block in the middle of the monitor, and the stash stayed at
 10 columns. 1.0.5 widens that block to the full screen itself.
 
-For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it.
-**32:9 (5120x1440) has only been simulated**, on a 3440x1440 display: it gave a
-39-column stash that filled the screen. It hasn't been run on a physical 32:9 monitor
-yet. If you have one, please report how it looks.
+For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it,
+and **by a player on a real 5120x1440 (32:9) monitor**, where the stash filled the
+screen. 2560x1080 hasn't been reported yet. If you play at it, please say how it looks.

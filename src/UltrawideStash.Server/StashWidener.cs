@@ -128,12 +128,17 @@ public class StashWidener(
             measurementNote = "measurement from a probe before 1.0.5 ignored";
         }
 
+        // The probe's own settings, so the prediction matches what it will draw. See
+        // ClientSettings for the 5120x1440 tester whose raised reserve cost a resize.
+        var client = ClientSettings.Read(ClientSettings.PathFor(folder), out var clientNote);
+
         var choice = ColumnChoice.For(
             settings.Columns,
             measurement,
             screenWidth,
             screenHeight,
-            settings.IgnoreMeasurement);
+            settings.IgnoreMeasurement,
+            client);
 
         WriteUninstallNote(folder);
 
@@ -267,13 +272,19 @@ public class StashWidener(
         // Always say how the width was arrived at. The failure this guards against is
         // silent -- a grid too wide for the panel is clipped, not resized -- so the
         // reasoning has to be in the log whether or not anything looks wrong.
-        logger.Info($"[UltrawideStash] Width: {choice.Reason}. ({screenNote}.)");
+        logger.Info($"[UltrawideStash] Width: {choice.Reason}. ({screenNote}; {clientNote}.)");
 
         // Why the client measured no room, when it measured no room -- see
         // Measurement.Diagnosis. Warning, because the player has something to change.
         var diagnosis = measurement?.Diagnosis();
 
         if (diagnosis is not null) logger.Warning($"[UltrawideStash] {diagnosis}");
+
+        // A changed client setting is the one thing that makes the stash narrower than
+        // the screen allows, and it is set in a file the server log never mentions.
+        var clientWarning = ClientSettingsWarning(client, screenWidth, screenHeight);
+
+        if (clientWarning is not null) logger.Warning($"[UltrawideStash] {clientWarning}");
 
         if (choice.Source == ColumnChoice.Origin.Clamped)
         {
@@ -758,6 +769,41 @@ public class StashWidener(
         {
             logger.Warning($"[UltrawideStash] Could not write {name} ({e.Message}).");
         }
+    }
+
+    /// <summary>
+    /// What to tell the player when the probe's settings cost them width, or null.
+    /// Public and static so the wording is tested.
+    /// </summary>
+    public static string? ClientSettingsWarning(ClientSettings client, int screenWidth, int screenHeight)
+    {
+        var file = $"BepInEx/config/{ClientSettings.ConfigFileName}";
+
+        if (!client.WidenStashPanel)
+        {
+            return $"WidenStashPanel is false in {file}, so the game leaves the stash panel at "
+                   + "its vanilla width and the stash stays 10 columns wide. Set it to true for "
+                   + "the wider stash.";
+        }
+
+        if (!client.ReserveChanged) return null;
+
+        var mine = StashFit.WidenedColumnsForScreen(screenWidth, screenHeight, client.GearPanelReserve);
+        var usual = StashFit.WidenedColumnsForScreen(screenWidth, screenHeight);
+
+        var reserve = client.GearPanelReserve.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+        if (mine == usual)
+        {
+            return $"GearPanelReserve is {reserve} in {file} (the default is 620). On this "
+                   + $"{screenWidth}x{screenHeight} screen it makes no difference to the stash, "
+                   + $"which is {usual} columns either way.";
+        }
+
+        return $"GearPanelReserve is {reserve} in {file} (the default is 620). The gear side "
+               + $"keeps more of the screen, so the stash is {mine} columns wide instead of "
+               + $"{usual} on this {screenWidth}x{screenHeight} screen. Set it back to 620 for "
+               + "the full width.";
     }
 
     private static string ModFolder()

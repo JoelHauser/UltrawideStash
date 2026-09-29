@@ -205,4 +205,22 @@ public class StashPlanTests
     {
         Assert.Equal(StashFit.WidenedColumns(canvas), For(canvas, 0).Potential);
     }
+
+    /// <summary>
+    /// The same agreement with a changed <c>GearPanelReserve</c>, which the server now
+    /// reads from the probe's config -- including one below the 520 floor both raise.
+    /// </summary>
+    [Theory]
+    [InlineData(2580, 520f)]
+    [InlineData(2580, 700f)]
+    [InlineData(3840, 1000f)]
+    [InlineData(3840, 100f)]
+    [InlineData(5160, 850.5f)]
+    [InlineData(2560, 900f)]
+    public void ThePotentialIsWhatTheServerPredictsAtAnyReserve(int canvas, float reserve)
+    {
+        Assert.Equal(
+            StashFit.WidenedColumns(canvas, reserve),
+            StashPlan.For(LeftSide(canvas), Panel, Chrome, reserve, 0).Potential);
+    }
 }

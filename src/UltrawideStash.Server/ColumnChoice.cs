@@ -75,14 +75,20 @@ public static class ColumnChoice
     /// <param name="ignoreMeasurement">
     /// True to honour <paramref name="requested"/> with no ceiling at all.
     /// </param>
+    /// <param name="client">
+    /// The probe's own settings, for the prediction: a raised <c>GearPanelReserve</c>
+    /// leaves the stash less room, and <c>WidenStashPanel = false</c> leaves it none.
+    /// Null means the probe's defaults.
+    /// </param>
     public static Choice For(
         int? requested,
         Measurement? measurement,
         int screenWidth,
         int screenHeight,
-        bool ignoreMeasurement)
+        bool ignoreMeasurement,
+        ClientSettings? client = null)
     {
-        var ceiling = Ceiling(measurement, screenWidth, screenHeight, out var ceilingFrom);
+        var ceiling = Ceiling(measurement, screenWidth, screenHeight, client ?? ClientSettings.Defaults, out var ceilingFrom);
 
         // The override. Still bounded by the absolute typo guard, because a config
         // holding 99999 is a mistake in every reading of it.
@@ -135,6 +141,7 @@ public static class ColumnChoice
         Measurement? measurement,
         int screenWidth,
         int screenHeight,
+        ClientSettings client,
         out Origin from)
     {
         if (measurement is not null)
@@ -145,12 +152,15 @@ public static class ColumnChoice
 
         from = Origin.Estimated;
 
+        // The probe will leave the panel alone, so a wider grid would only scroll.
+        if (!client.WidenStashPanel) return StashFit.VanillaColumns;
+
         // Predict what the client's widening will produce rather than assuming the
         // panel is pinned. ConservativeColumns was written when it was -- it grants
         // only canvas beyond 16:9 and answers 20 on a 2580 canvas, one more than the
         // widened panel can actually show, which would overflow into a scrollbar.
         return Clamp(
-            StashFit.WidenedColumnsForScreen(screenWidth, screenHeight),
+            StashFit.WidenedColumnsForScreen(screenWidth, screenHeight, client.GearPanelReserve),
             StashFit.VanillaColumns,
             StashFit.AbsoluteMaxColumns);
     }

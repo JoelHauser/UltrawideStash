@@ -160,7 +160,8 @@ public static class StashFit
     ///
     /// ## The layout this mirrors
     ///
-    /// Measured off a live 3440x1440 client. On a canvas of width C the inventory
+    /// Measured off a live 3440x1440 client under UIScale.Reloaded's stretch, which the
+    /// probe makes itself from 1.0.5 on. On a canvas of width C the inventory
     /// screen is laid out as:
     ///
     /// <code>
@@ -168,7 +169,7 @@ public static class StashFit
     /// </code>
     ///
     /// so LeftSide is <c>C - 714</c> -- 1866 at 2580, 1206 at 1920, both confirmed in
-    /// the logs. The client then narrows LeftSide to <see cref="GearReserveTotal"/>,
+    /// the logs. The client then narrows LeftSide to twice <see cref="DefaultReservePerPanel"/>,
     /// keeps <see cref="ExtraGapPixels"/> of the slack as clearance and gives the rest
     /// to the panel, out of which the grid never gets <see cref="PanelChromePixels"/>
     /// or the <see cref="ScrollSlackPixels"/> that keeps it off its scrollbar.
@@ -178,10 +179,18 @@ public static class StashFit
     /// change there is a change here. A disagreement is self-correcting rather than
     /// fatal: the probe measures the real panel and its measurement supersedes this.
     /// </summary>
-    public static int WidenedColumns(int canvasWidth)
+    /// <param name="canvasWidth">The logical canvas width.</param>
+    /// <param name="reservePerPanel">
+    /// The probe's <c>GearPanelReserve</c>, raised to its 520 floor as the probe does.
+    /// A raised reserve leaves the stash less room, and predicting with the default then
+    /// sized the grid wider than the probe would draw it.
+    /// </param>
+    public static int WidenedColumns(int canvasWidth, float reservePerPanel = DefaultReservePerPanel)
     {
+        if (reservePerPanel < MinReservePerPanel) reservePerPanel = MinReservePerPanel;
+
         var leftSide = canvasWidth - ScreenFurniturePixels;
-        var slack = leftSide - GearReserveTotal;
+        var slack = leftSide - reservePerPanel * 2f;
 
         if (slack < CellPixels) return VanillaColumns;
 
@@ -196,19 +205,25 @@ public static class StashFit
     }
 
     /// <summary><see cref="WidenedColumns"/> straight from a screen size.</summary>
-    public static int WidenedColumnsForScreen(int screenWidth, int screenHeight)
+    public static int WidenedColumnsForScreen(
+        int screenWidth,
+        int screenHeight,
+        float reservePerPanel = DefaultReservePerPanel)
     {
-        return WidenedColumns(CanvasWidth(screenWidth, screenHeight));
+        return WidenedColumns(CanvasWidth(screenWidth, screenHeight), reservePerPanel);
     }
+
+    /// <summary>StashWiden.DefaultReservePerPanel -- what each gear panel keeps.</summary>
+    public const float DefaultReservePerPanel = 620f;
+
+    /// <summary>StashPlan.MinReservePerPanel -- the probe raises anything lower to this.</summary>
+    public const float MinReservePerPanel = 520f;
 
     /// <summary>Canvas width the inventory screen spends on margins, gap and the stash panel.</summary>
     private const int ScreenFurniturePixels = 714;
 
     /// <summary>The stash panel before it is widened.</summary>
     private const int VanillaPanelPixels = 680;
-
-    /// <summary>Both gear panels' reserve: StashWiden.DefaultReservePerPanel x 2.</summary>
-    private const int GearReserveTotal = 1240;
 
     /// <summary>StashWiden.GapPixels.</summary>
     private const int ExtraGapPixels = 24;
