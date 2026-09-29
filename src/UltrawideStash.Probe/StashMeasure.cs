@@ -124,8 +124,7 @@ namespace UltrawideStash.Probe
                 // normally, and that the player feels as a hitch.
                 if (Widen != null && !_widenSaid)
                 {
-                    int widenedColumns;
-                    ApplyWiden(gridView, Widen.Value, out widenedColumns);
+                    ApplyWiden(gridView, Widen.Value);
                 }
 
                 if (reported) return true;
@@ -254,7 +253,11 @@ namespace UltrawideStash.Probe
         /// runs. So the two are split -- resize now, measure when there is something
         /// to measure.
         /// </summary>
-        internal static void WidenNow(MonoBehaviour panel, Action<string> log)
+        /// <param name="gridColumns">
+        /// The stash grid's width, read off the item <c>Show</c> was handed, or 0 when
+        /// it could not be read -- the panel is then widened as far as it will go.
+        /// </param>
+        internal static void WidenNow(MonoBehaviour panel, int gridColumns, Action<string> log)
         {
             if (Widen == null || panel == null) return;
 
@@ -269,8 +272,7 @@ namespace UltrawideStash.Probe
 
                 if (chain.Cap == null) return;
 
-                int columns;
-                var said = StashWiden.Apply(chain.Cap, Chrome, Widen.Value, out columns);
+                var said = StashWiden.Apply(chain.Cap, Chrome, Widen.Value, gridColumns);
 
                 if (!_widenSaid)
                 {
@@ -327,10 +329,8 @@ namespace UltrawideStash.Probe
         /// The chain is walked into a throwaway buffer rather than reusing the
         /// report's, because this runs on every open and the report does not.
         /// </summary>
-        private static string ApplyWiden(Component gridView, float reservePerPanel, out int columns)
+        private static string ApplyWiden(Component gridView, float reservePerPanel)
         {
-            columns = 0;
-
             var gridRect = gridView.transform as RectTransform;
 
             if (gridRect == null) return "cannot widen: the grid has no RectTransform.";
@@ -338,7 +338,10 @@ namespace UltrawideStash.Probe
             var canvas = gridView.GetComponentInParent<Canvas>();
             var chain = AppendChain(new StringBuilder(), gridRect, canvas);
 
-            return StashWiden.Apply(chain.Cap, chain.Chrome, reservePerPanel, out columns);
+            var grid = GameTypes.GridViewGrid.GetValue(gridView);
+            var gridColumns = grid != null ? (int)GameTypes.GridWidth.GetValue(grid, null) : 0;
+
+            return StashWiden.Apply(chain.Cap, chain.Chrome, reservePerPanel, gridColumns);
         }
 
         private static string Build(MonoBehaviour panel, Component gridView)
@@ -417,6 +420,26 @@ namespace UltrawideStash.Probe
                     chain.Cap.name));
             }
 
+            // What the server is told. Not the panel as it stands: since the panel
+            // stops at the grid's width, a 19-wide grid on a screen with room for 21
+            // shows a 19-column panel, and reporting that would keep the server at 19
+            // forever. The plan's potential is the room there is.
+            var plan = Widen != null ? StashWiden.Last : null;
+            var maxColumns = plan.HasValue ? Math.Max(fits, plan.Value.Potential) : fits;
+            var canWiden = plan.HasValue && plan.Value.CanWiden;
+
+            var whyNot = Widen == null
+                ? "WidenStashPanel is false in BepInEx/config/" + ProbePlugin.PluginGuid + ".cfg"
+                : plan.HasValue
+                    ? plan.Value.WhyNot
+                    : "the stash panel was never widened or planned";
+
+            sb.AppendLine(canWiden
+                ? string.Format(
+                    "widening: room for {0} columns; the panel shows {1}, the grid is {2}",
+                    maxColumns, fits, columns)
+                : "widening: not possible -- " + whyNot);
+
             AppendPanels(sb, chain.Cap, canvas);
 
             // Hand the number to the server half rather than leaving the player to
@@ -466,12 +489,12 @@ namespace UltrawideStash.Probe
                     viewport, drawn, verdict));
             }
 
-            // The server reads this to size the grid. It gets the count for the panel
-            // as it stands *after* any widening, because the widening has already run
-            // by the time the report is built -- otherwise the grid would be sized for
-            // a panel that no longer exists.
+            // The server reads this to size the grid: the columns the widened panel can
+            // show (see maxColumns above), and when it cannot widen at all, why -- so
+            // the server log can say it rather than just reporting 10 columns.
             sb.AppendLine(MeasurementFile.Write(
-                fits, Screen.width, Screen.height, canvasWidth, chain.Usable));
+                maxColumns, Screen.width, Screen.height, canvasWidth, chain.Usable,
+                canWiden, canWiden ? null : whyNot));
 
             sb.Append("=============================");
 

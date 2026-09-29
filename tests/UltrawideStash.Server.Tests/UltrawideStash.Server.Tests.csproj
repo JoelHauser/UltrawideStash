@@ -35,6 +35,7 @@
   -->
   <ItemGroup>
     <Compile Include="..\..\src\UltrawideStash.Probe\ScreenLayout.cs" Link="Probe\ScreenLayout.cs" />
+    <Compile Include="..\..\src\UltrawideStash.Probe\StashPlan.cs" Link="Probe\StashPlan.cs" />
   </ItemGroup>
 
 </Project>

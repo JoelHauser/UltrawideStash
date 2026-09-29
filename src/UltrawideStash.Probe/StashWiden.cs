@@ -25,10 +25,12 @@ namespace UltrawideStash.Probe
     ///
     /// ## What this does
     ///
-    /// Narrows LeftSide back towards its 16:9 width and widens Stash Panel by exactly
-    /// what LeftSide gave up. The layout group re-flows its two panels without being
-    /// told to, which is why this is a change to two RectTransforms and not a rebuild
-    /// of the screen.
+    /// Narrows LeftSide back towards its 16:9 width and widens Stash Panel by what
+    /// LeftSide gave up, less a gap -- and no further than the grid needs, so a grid
+    /// narrower than the room available leaves the rest with the gear side instead of
+    /// as dead space in the panel. The layout group re-flows its two panels without
+    /// being told to, which is why this is a change to two RectTransforms and not a
+    /// rebuild of the screen. The arithmetic is <see cref="StashPlan"/>.
     ///
     /// The reserve is per panel, not total, because the binding constraint is the
     /// wider of the two: <c>Gear Panel</c> is a fixed 494 px and does not shrink, so
@@ -51,7 +53,7 @@ namespace UltrawideStash.Probe
         internal const float DefaultReservePerPanel = 620f;
 
         /// <summary>The narrowest reserve that still clears Gear Panel's 494 px.</summary>
-        internal const float MinReservePerPanel = 520f;
+        internal const float MinReservePerPanel = StashPlan.MinReservePerPanel;
 
         /// <summary>
         /// Clear air left between the gear side and the widened stash panel.
@@ -60,7 +62,7 @@ namespace UltrawideStash.Probe
         /// as a seam rather than a gap once the stash has been pulled left until it
         /// nearly touches the special slots. This is on top of that 10.
         /// </summary>
-        internal const float GapPixels = 24f;
+        internal const float GapPixels = StashPlan.GapPixels;
 
         /// <summary>
         /// The gap the screen already ships with between LeftSide and Stash Panel,
@@ -77,38 +79,48 @@ namespace UltrawideStash.Probe
         /// pixels nobody can see, against a horizontal scrollbar that defeats the
         /// entire point of the mod.
         /// </summary>
-        internal const float ScrollSlackPixels = 4f;
+        internal const float ScrollSlackPixels = StashPlan.ScrollSlackPixels;
 
         /// <summary>
-        /// Widen the stash panel in place.
+        /// The plan behind the most recent <see cref="Apply"/>, for the report and the
+        /// measurement file. Null until the character screen's stash has been shown.
+        /// </summary>
+        internal static StashPlan? Last;
+
+        /// <summary>
+        /// Widen the stash panel in place, as far as the grid needs and the gear side
+        /// can spare. See <see cref="StashPlan"/> for the arithmetic.
+        ///
+        /// Idempotent: the plan is always made from the untouched geometry (remembered
+        /// from the first widening, or read off the screen before one) and applied as
+        /// offsets from it, so a second open, a resolution change or a different grid
+        /// width all land where a first open would.
         /// </summary>
         /// <param name="cap">The stash panel -- the pinned ancestor that clips.</param>
         /// <param name="chrome">Panel width the grid never gets.</param>
         /// <param name="reservePerPanel">What each gear panel keeps.</param>
-        /// <param name="columns">Columns the widened panel can show.</param>
+        /// <param name="gridColumns">The stash grid's width, or 0 if not known.</param>
         /// <returns>A line for the log, whether or not anything moved.</returns>
         internal static string Apply(
             RectTransform cap,
             float chrome,
             float reservePerPanel,
-            out int columns)
+            int gridColumns)
         {
-            columns = 0;
-
-            if (cap == null) return "cannot widen: no stash panel.";
+            if (cap == null) return Refuse(null, chrome, "no stash panel was found");
 
             var parent = cap.parent as RectTransform;
 
-            if (parent == null) return "cannot widen: the stash panel has no parent.";
+            if (parent == null) return Refuse(cap, chrome, "the stash panel has no parent");
 
             var leftSide = FindChild(parent, LeftSideName);
 
             if (leftSide == null)
             {
-                return string.Format(
-                    "cannot widen: no '{0}' beside the stash panel. The screen's layout has "
-                    + "changed and widening it blind would be worse than leaving it alone.",
-                    LeftSideName);
+                return Refuse(cap, chrome, string.Format(
+                    "the inventory screen has no '{0}' beside the stash panel, so its layout "
+                    + "has changed and widening it blind would be worse than leaving it alone",
+                    LeftSideName));
             }
 
             var stretches =
@@ -116,85 +128,67 @@ namespace UltrawideStash.Probe
 
             if (!stretches)
             {
-                return string.Format(
-                    "cannot widen: '{0}' is pinned, so narrowing it would not give the "
-                    + "stash the room back.", LeftSideName);
+                return Refuse(cap, chrome, string.Format(
+                    "'{0}' is pinned, so narrowing it would not give the stash any room",
+                    LeftSideName));
             }
 
-            if (reservePerPanel < MinReservePerPanel)
-            {
-                reservePerPanel = MinReservePerPanel;
-            }
+            // The untouched geometry. Offsets are absolute and survive a resolution
+            // change; widths follow the canvas, so the vanilla widths are the current
+            // ones with this mod's own change taken back off.
+            var ours = _cap == cap && _leftSide == leftSide;
+            var baseOffsetMax = ours ? _leftSideOffsetMax : leftSide.offsetMax;
+            var baseSizeDelta = ours ? _capSizeDelta : cap.sizeDelta;
 
-            var target = reservePerPanel * 2f;
-            var slack = leftSide.rect.width - target;
+            var vanillaPanel = cap.rect.width - (cap.sizeDelta.x - baseSizeDelta.x);
+            var vanillaLeft = leftSide.rect.width + (baseOffsetMax.x - leftSide.offsetMax.x);
 
-            columns = StashMeasure.ColumnsThatFit(cap.rect.width - chrome);
+            var plan = StashPlan.For(vanillaLeft, vanillaPanel, chrome, reservePerPanel, gridColumns);
 
-            // Already narrow, or already done. Opening the stash twice must not widen
-            // it twice, and this is the check that makes the whole thing idempotent.
-            if (slack < StashMeasure.CellPixels)
-            {
-                return string.Format(
-                    "nothing to widen: '{0}' is {1:0.0} px against a {2:0.0} px reserve, "
-                    + "which is less than one column of slack. Stash stays at {3} columns.",
-                    LeftSideName, leftSide.rect.width, target, columns);
-            }
-
-            // The gap has to be taken out of the slack, not added to the panel.
-            //
-            // LeftSide and Stash Panel are neighbours, so if the panel grows by
-            // exactly what LeftSide gives up, the 10 px between them stays 10 px
-            // however much moves -- the earlier version added the gap to the panel's
-            // width and changed nothing except how much dead space ended up inside
-            // it. Real clearance means the panel growing by *less* than LeftSide
-            // shrinks, and the difference is the gap.
-            var usable = cap.rect.width + slack - GapPixels;
-
-            // Take only what turns into columns. A grid is a whole number of 63 px
-            // cells, so a panel sized to the last available pixel ends in a strip too
-            // narrow to hold a column: width taken off the gear side, then spent on
-            // nothing, against the side that has slots up against its edge.
-            var fits = StashMeasure.ColumnsThatFit(usable - chrome - ScrollSlackPixels);
-            var wanted = StashMeasure.WidthOfColumns(fits) + chrome + ScrollSlackPixels;
-
-            var grow = wanted - cap.rect.width;
-
-            if (grow < StashMeasure.CellPixels)
-            {
-                return string.Format(
-                    "nothing to widen: '{0}' has {1:0.0} px of slack, which after a "
-                    + "{2:0.0} px gap is less than one more column. Stash stays at {3} "
-                    + "columns.",
-                    LeftSideName, slack, GapPixels, columns);
-            }
-
-            var shrink = grow + GapPixels;
-
-            var before = cap.rect.width;
-
-            Remember(leftSide, cap);
+            Last = plan;
 
             try
             {
-                // LeftSide stretches, so its width is the parent's less the two
-                // offsets. Pushing the right offset in is what narrows it, and the
-                // layout group redistributes its children on the next layout pass.
-                var offsetMax = leftSide.offsetMax;
-                leftSide.offsetMax = new Vector2(offsetMax.x - shrink, offsetMax.y);
+                if (plan.Widens)
+                {
+                    Remember(leftSide, cap);
 
-                // Stash Panel is pinned to the right edge, so growing its width grows
-                // it leftwards. It grows by less than LeftSide gave up; the remainder
-                // is the gap between them.
-                var size = cap.sizeDelta;
-                cap.sizeDelta = new Vector2(size.x + grow, size.y);
+                    // LeftSide stretches, so pushing its right offset in narrows it and
+                    // the layout group re-flows its two panels on the next pass. Stash
+                    // Panel is pinned right, so growing it grows it leftwards -- by less
+                    // than LeftSide gave up, and the difference is the gap.
+                    leftSide.offsetMax = new Vector2(baseOffsetMax.x - plan.Shrink, leftSide.offsetMax.y);
+                    cap.sizeDelta = new Vector2(baseSizeDelta.x + plan.Grow, cap.sizeDelta.y);
+                }
+                else if (ours)
+                {
+                    // Widened earlier and nothing to widen now: put it back rather than
+                    // leave a panel sized for a screen or a grid that has gone.
+                    leftSide.offsetMax = baseOffsetMax;
+                    cap.sizeDelta = baseSizeDelta;
+                    _cap = null;
+                    _leftSide = null;
+                }
             }
             catch (Exception e)
             {
                 return "could not widen the stash panel -- " + e.Message;
             }
 
-            columns = StashMeasure.ColumnsThatFit(cap.rect.width - chrome);
+            if (!plan.CanWiden)
+            {
+                return string.Format(
+                    "nothing to widen: {0}. Stash stays at {1} columns.", plan.WhyNot, plan.Shown);
+            }
+
+            if (!plan.Widens)
+            {
+                return string.Format(
+                    "not widened: the grid is {0} columns and the vanilla panel already shows "
+                    + "{1}. There is room for {2}; with \"columns\": \"auto\" the server uses "
+                    + "them from its next start.",
+                    gridColumns, plan.Shown, plan.Potential);
+            }
 
             var sb = new StringBuilder();
 
@@ -202,18 +196,45 @@ namespace UltrawideStash.Probe
                 "widened: '{0}' {1:0.0} -> {2:0.0} px, stash panel {3:0.0} -> {4:0.0} px, "
                 + "gap between them {5:0.0} px.",
                 LeftSideName,
-                leftSide.rect.width + shrink,
+                vanillaLeft,
                 leftSide.rect.width,
-                before,
+                vanillaPanel,
                 cap.rect.width,
                 GapPixels + BaseGapPixels));
 
-            sb.Append(string.Format(
-                "the stash panel can now show {0} columns. The grid is still the width the "
-                + "server gave it -- set columns to {0} and restart the server to fill it.",
-                columns));
+            if (plan.Columns < plan.Potential)
+            {
+                sb.Append(string.Format(
+                    "the panel shows {0} columns, the width of the grid. There is room for {1}; "
+                    + "with \"columns\": \"auto\" the server uses them from its next start.",
+                    plan.Columns, plan.Potential));
+            }
+            else if (gridColumns > plan.Potential)
+            {
+                sb.Append(string.Format(
+                    "the panel shows {0} columns, but the grid is {1} -- wider than this screen "
+                    + "can show, so it will scroll sideways. Either the grid was sized for a "
+                    + "wider screen (restart the server and \"auto\" will size it for this one), "
+                    + "or it was set by hand (set \"columns\" to \"auto\" and ignoreMeasurement "
+                    + "to false in ultrawidestash.config.json, then restart the server).",
+                    plan.Potential, gridColumns));
+            }
+            else
+            {
+                sb.Append(string.Format("the panel shows {0} columns.", plan.Columns));
+            }
 
             return sb.ToString();
+        }
+
+        /// <summary>Record a panel that cannot be widened, and say why.</summary>
+        private static string Refuse(RectTransform cap, float chrome, string why)
+        {
+            var shown = cap != null ? StashPlan.ColumnsThatFit(cap.rect.width - chrome) : 0;
+
+            Last = StashPlan.Refused(shown, why);
+
+            return "cannot widen: " + why + ".";
         }
 
         /// <summary>

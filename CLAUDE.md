@@ -365,6 +365,7 @@ src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the
   GameTypes.cs        every game member, resolved by patched name, in one place
   StashMeasure.cs     the walk up the RectTransform chain, and the report
   StashWiden.cs       narrows LeftSide, grows Stash Panel, and puts both back for a raid
+  StashPlan.cs        the character-screen widening arithmetic -- pure, also compiled into the tests
   MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
   ScreenLayout.cs     transfer-screen planner -- pure, also compiled into the tests
@@ -372,7 +373,7 @@ src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the
   ProbePlugin.cs      BepInPlugin; postfix on SimpleStashPanel.Show, prefix on
                       ItemsPanel.Show, both gated on the game's inRaid flag
 
-tests/UltrawideStash.Server.Tests/    xunit, 196 tests
+tests/UltrawideStash.Server.Tests/    xunit, 226 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
   RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
@@ -383,6 +384,8 @@ tests/UltrawideStash.Server.Tests/    xunit, 196 tests
   ProfileStoreTests.cs          read/write round trips against real files on disk
   SortingTableOverflowTests.cs  the 7-wide overflow, end to end through a profile
   ScreenLayoutTests.cs          the transfer-screen planner; links the probe's ScreenLayout.cs
+  StashPlanTests.cs             the character-screen plan; links StashPlan.cs; agrees with StashFit
+  MeasurementDiagnosisTests.cs  the server log's "could not widen" sentence, old and new files
 
 scripts/
   pack.ps1            build both halves, test, check references, stage, zip, install
@@ -1163,3 +1166,113 @@ side at 3440x1440, and their button positions are prefab data. So there is no re
   grown size only; the vanilla panel is 632 px of viewport round a 631 px grid.
 - **A `sed 's/ -- / — /g'` over README.md** to match its dash style also rewrote two
   quoted log lines. Edit the new text, not the file.
+
+
+## 32:9, the grid cap, and saying why (1.0.4)
+
+Prompted by Forge issue #1 (sp-mod.com/mod/3053/ultrawide-stash/issues/1), 2026-09-28:
+a 5120x1440 player whose panel never widened, whose probe measured 10 columns, and
+whose forced `columns` (with `ignoreMeasurement`) gave a wide grid in a 10-column panel
+with a sideways scrollbar. No logs came with it.
+
+### 32:9 works -- verified by faking the canvas
+
+Read off the patched assembly first: `UICanvasScalerController` has no aspect cap
+(`_scaleFactor = min(w/1920, h/1080)`, applied by `Utils.SetCanvasRestriction`, which
+only sets `ConstantPixelSize` and the factor), and EFT lists 32:9 in
+`EFTAspectHelper._landscapeAspectRatios`. So a 5120x1440 game gets a 3840 canvas.
+
+Then run on the 3440x1440 box with a throwaway BepInEx plugin (kept in the session
+scratchpad, never shipped):
+
+- **A 32:9 window does not work.** `Screen.SetResolution(3440, 967, Windowed)` held for
+  about a second and EFT put it back to 3424x1361 -- the work area minus borders --
+  every time, six attempts in a row. EFT's windowed resolution list
+  (`EFTDisplayHelper.SelectWindowModeResolutions`) is built from the display's own modes.
+- **Faking the scale does.** Set the public static `EFT.UI.UICanvasScalerController._scaleFactor`
+  to `Screen.width / 3840` and invoke its `ResolutionChangedHandler()`: every registered
+  CanvasScaler takes it and `OnResolutionChanged` fires. The canvas is 3840 x 1607 --
+  taller than a real 32:9's 1080, which does not matter to the horizontal layout.
+
+Result, from the BepInEx log: `'LeftSide' 3126.0 -> 1272.0 px, stash panel 680.0 ->
+2510.0 px`, 39 columns -- exactly `StashFit.WidenedColumnsForScreen(5120, 1440)`. **The
+reported case is not a 32:9 layout bug.** The likeliest cause is EFT itself running at a
+16:9 resolution on that monitor, which the new server diagnosis names; unconfirmed until
+the reporter sends a log.
+
+**Hazard of that test method:** the probe measures with
+`Screen.width x Screen.height`, which a faked canvas does not change. So it writes a
+39-column (or 10-column) measurement stamped with the real screen size, and the server
+trusts it -- a restart would widen (or narrow and repack) real profiles. Back up
+`ultrawidestash.measured.json` before a faked run and put it back (or let one open at
+the real canvas rewrite it) before the server starts again. The probe also logs and
+reports once per screen size, so a harness has to call `StashMeasure.Forget()` and
+clear `_widenSaid` for a fake to be logged at all.
+
+### The panel stops at the grid
+
+Seen in the same session at a 3424x1361 window (canvas 2717): room for 21 columns,
+grid 19, and the panel took all 21 -- `DEAD SPACE 130.0 px`. It happens whenever the
+grid is narrower than the room: a resolution change before the server restarts, or
+`columns` set below what fits.
+
+`StashPlan` (pure, linked into the tests) now plans the widening:
+
+- **`Potential`** -- columns the fully widened panel could show. This is what the
+  measurement file carries, so the server still grows into the room at its next start.
+  Writing the panel's *actual* width would have pinned the server at the grid's width
+  for ever.
+- **`Columns`** -- what the panel is widened to: the grid's width when narrower. The
+  grid width comes off the stash item `SimpleStashPanel.Show` is handed
+  (`GameTypes.FirstGridWidth`, as the transfer screens already did), or off the GridView
+  in the Update-time fallback.
+- **Always from vanilla.** `StashWiden.Apply` recovers the untouched widths (remembered
+  offsets, or the current ones before any widening) and applies the plan as offsets from
+  them. It used to plan from the current state, so a resolution change widened on top of
+  a widening. A plan with nothing to widen on a panel this mod had widened puts it back.
+- `StashPlanTests.ThePotentialIsWhatTheServerPredicts` holds the plan to
+  `StashFit.WidenedColumns` across eleven canvases -- the duplicated constants now fail a
+  test when they drift, instead of only the 3440 case.
+
+Verified in game 2026-09-28 with the faked canvas: 2580 -> 19 columns, `fits, 4.0 px
+spare` (unchanged); 1920 -> put back to 680 px, `nothing to widen: ... 1206 px wide and
+keeps 1240 px ...`, horizontal scrollbar, measurement `canWiden: false`; back to 2580 ->
+widened again. 3840 with the 19-wide grid, faked before the first open:
+`'LeftSide' 3126.0 -> 2532.0 px, stash panel 680.0 -> 1250.0 px ... the panel shows 19
+columns, the width of the grid. There is room for 39`, and the measurement said 39.
+
+**End to end at 32:9, same night**, on profile HUH only: SCOOP and PITTEST were parked
+outside `user/profiles` so the server never loaded them (all three share the Edge of
+Darkness template, and the width is per template, never per profile), profiles backed
+up, `compensateRows: false` so the stash only grew (39x68, nothing relocated), the
+39-column measurement restored. Server: `5 stash template(s) at 39 columns (2458px),
+rows kept`. Client at the faked 3840 canvas: grid `39x68`, panel `680.0 -> 2510.0 px`,
+`CHECK: viewport 2462.0 px vs grid 2458.0 px -- fits, 4.0 px spare`, out-of-bounds none;
+the screenshot fills to the right edge. Back at 2580 the 39 grid scrolled sideways, as it
+should. Everything restored afterwards and hash-checked against the backup.
+**This is a simulation on a 3440x1440 display, not a 32:9 monitor.** What it cannot
+cover: the server reading 5120x1440 from the registry (`ScreenProbe`) on a real first
+start, and anything about a real 32:9 display the faked canvas scale does not reproduce
+(the canvas was also 1607 tall, not 1080). It still needs a run on a physical monitor,
+and every release note has to say so.
+That run also showed the overflow message's advice ("set columns to auto") was wrong
+when columns already was auto and the grid was merely sized for a wider screen; it now
+names both causes.
+
+### The server says why
+
+The measurement file gains `canWiden` (bool) and, when false, `whyNot` -- the plan's
+reason, or `WidenStashPanel is false`. `Measurement.Diagnosis()` turns it into one
+server-log warning after the `Width:` line, and adds the EFT-resolution advice when the
+canvas is 1920 or narrower. Older files lack both fields and produce nothing. The old
+"No change was made, and on a 16:9 screen that is the correct default" info line is
+skipped when the diagnosis fires. The server's reading of the new fields is unit-tested
+only; exercising it live means a server start that would narrow the real stash to 10.
+
+### SVM, for the record
+
+Asked in the same issue. SVM (svm-csharp, GhostFenixx) sets `CellsV` on all five stash
+templates to absolute values from its config, in an `IOnLoad` at
+`OnLoadOrder.Preload + 5` (100,005) -- long before this mod's `PostLoad`. So SVM's rows
+are the baseline: capacity is held at SVM's, and the uninstall path returns to SVM's
+rows. Nothing to change.

@@ -67,6 +67,9 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
   crates, bodies and loot panels are left alone. The stash widens again when you're back
   in the menu.
+- **Stuck at 10 columns?** Look in the **server** log. If the game couldn't widen the
+  stash, it says why there. The usual cause is EFT itself set to a 16:9 resolution on a
+  wider monitor. Set EFT's resolution in *Settings → Graphics* to your monitor's own.
 
 # Uninstalling — set `columns` to 10 first
 
@@ -87,4 +90,12 @@ PowerShell, no mod needed, shows you what it would do before writing).
 Fine with auto-sort, **UI Fixes**, **Advanced Stash Sorting** and **Loot In Vicinity**
 (the mod stays out of raid, so its Nearby Items panel is untouched).
 
-For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440.
+**SVM (Server Value Modifier)** works too. If you've given your stash more rows with SVM,
+those rows are kept. With the default settings your stash gets wider and shorter but
+holds the same number of cells SVM gave it. Set `compensateRows: false` to keep SVM's
+rows and get the extra width as well.
+
+For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440. **32:9 (5120x1440) has only been
+simulated**, on a 3440x1440 display: it gave a 39-column stash that filled the screen.
+It hasn't been run on a physical 32:9 monitor yet. If you have one, please report how it
+looks.

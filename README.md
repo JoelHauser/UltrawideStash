@@ -3,16 +3,17 @@
 Makes Escape from Tarkov's stash wider than 10 columns, so it fills the horizontal
 space an ultrawide monitor has and a 16:9 one does not.
 
-**Nothing in this repo has ever run in the game.** Everything below was read out of the
-game assembly and SPT's database by static analysis. The logic is tested; the result on
-screen is not. Version 0.6.0 makes the stash wider and tells you whether the UI can draw
-it. It does not yet fix the UI if the answer is no.
+**It runs in game at 21:9.** Since 1.0.0 it has been played on SPT 4.1.6 at 3440x1440:
+a 19x36 stash in a widened panel, with no scrollbar and no dead space. **32:9 (5120x1440)
+has only been simulated** (1.0.4, on a 3440x1440 display: a 39-column stash filling the
+screen). It still needs a run on a physical 32:9 monitor. See [Status](#status) for what
+has and has not been checked.
 
-**On a 16:9 monitor this mod does nothing until it has measured your screen, and that is
-deliberate.** 1080p, 1440p and 4K all get exactly the same canvas width and none of them
-have room to spare — see [Why there is room to fill](#why-there-is-room-to-fill). Install
-the probe, open your stash once, restart the server, and `"auto"` will use whatever room
-actually turns out to be there.
+**On a 16:9 monitor this mod does nothing, and that is deliberate.** 1080p, 1440p and 4K
+all get exactly the same canvas width and none of them have room to spare — see
+[Why there is room to fill](#why-there-is-room-to-fill). On a wider screen it works out
+of the box: the server reads the resolution EFT last ran at and sizes the stash on its
+first start, and the probe's measurement takes over from then on.
 
 ---
 
@@ -90,11 +91,11 @@ The server half also writes two files into its own folder on first start:
 `ultrawidestash.config.json` and `HOW-TO-UNINSTALL.txt`. The probe writes a third,
 `ultrawidestash.measured.json`, the first time you open your stash.
 
-The two DLLs are independent, but they work best together: the server owns the width and
-the probe is the only thing that can see how much room there is to draw it. Without the
-probe the server falls back to a deliberately pessimistic estimate, which on a 16:9
-screen means it does nothing. The probe is useful on a vanilla 10-wide stash too — it
-still reports how much room there is.
+The two DLLs belong together: the server owns the width, and the probe is what makes
+room for it on screen and measures how much room there is. Without the probe the server
+still sizes the grid from the resolution EFT saved, but nothing widens the panel, so a
+wider grid scrolls sideways. The probe is useful on a vanilla 10-wide stash too — it
+still reports how much room there is, and why not when there is none.
 
 ## Install
 
@@ -135,12 +136,15 @@ on first run:
 
 `"auto"` uses whatever your screen can actually show:
 
-1. **The probe's measurement**, if there is one. The probe measures the real stash panel
-   on your real screen and writes `ultrawidestash.measured.json` next to this config.
-   That is the only source that has seen the truth, so it wins.
-2. **An estimate from `screenWidth`/`screenHeight`** otherwise. It grants only the canvas
-   width beyond 16:9 and assumes the panel has no slack of its own, so on a 16:9 screen
-   it comes to vanilla 10 — the mod changes nothing until it has measured something.
+1. **The probe's measurement**, if there is one for the screen you are on. The probe
+   measures the real stash panel on your real screen and writes
+   `ultrawidestash.measured.json` next to this config: the columns the widened panel
+   can show. That is the only source that has seen the truth, so it wins. A measurement
+   taken at a different resolution is ignored.
+2. **A prediction from your screen size** otherwise — read from the resolution EFT saved
+   in the registry (Windows), or from `screenWidth`/`screenHeight` when that cannot be
+   read. It works out what the probe will do to the panel: 19 columns at 3440x1440, 39 at
+   5120x1440, 10 on any 16:9 screen.
 
 A number is honoured, but still **clamped to what the screen can show**, and the log
 says so when it clamps. A grid wider than the panel is not resized to fit; it is clipped,
@@ -180,7 +184,10 @@ flat, it goes up — losing an item is not an acceptable price for a tidy number
 `BepInEx/config/com.mybutthasarash.ultrawidestash.cfg`, section `[Layout]`:
 
 - **`WidenStashPanel`** (`true`) — narrow the gear side of the character screen and
-  give the width to the stash panel.
+  give the width to the stash panel. Since 1.0.4 the panel is widened only as far as
+  the grid needs: if the grid is narrower than the room there is (after a resolution
+  change, before the server restarts, or with `columns` set lower), the rest stays with
+  the gear side instead of sitting as empty panel beside the grid.
 - **`GearPanelReserve`** (`620`) — canvas px each gear panel keeps when it does.
 - **`WidenTransferScreens`** (`true`, new in 1.0.3) — also widen the stash panel on the
   scav loot transfer after a raid, on the screen for receiving mail items, and on the
@@ -347,6 +354,14 @@ This reads whatever is in the template when it runs and treats that as the basel
 expansion mod, load order decides which is the baseline, and `verbose: true` prints the
 before and after for each stash so you can see what happened.
 
+**SVM (Server Value Modifier)** — its *Hideout → Stash* setting sets the row count of
+all five stashes, and it runs early in the server's load (`OnLoadOrder.Preload + 5`),
+well before this mod (`PostLoad`). So SVM's rows are the baseline: an Edge of Darkness
+stash SVM has made 10×100 becomes 19×53 on a 3440×1440 screen, the same 1,000 cells,
+just wider and shorter. Set `compensateRows` to `false` to keep all of SVM's rows *and*
+the extra width. Either way, a stash that is still taller than the panel scrolls up and
+down, as it does without this mod.
+
 It refuses to narrow a stash, so it can never undo another mod's widening.
 
 ---
@@ -478,13 +493,15 @@ Two ways back, and neither loses anything:
 
 ## The measurement procedure
 
-The probe answers the one question that decides whether a client-side UI fix is needed,
-and since 0.6.0 it also hands its answer straight to the server.
+The probe widens the panel, measures the result, and hands its answer straight to the
+server. You do not have to do anything for this — it happens every time you open the
+character screen — but this is how to read it when something looks wrong.
 
-1. Install both halves. Leave `columns` at `"auto"` for the first run.
-2. Launch, open your stash, and let it sit for a second. The probe writes
+1. Install both halves. Leave `columns` at `"auto"`.
+2. Launch, open the character screen, and let it sit for a second. The probe writes
    `ultrawidestash.measured.json` into the server mod's folder.
-3. **Restart the SPT server.** `"auto"` now uses the measured number.
+3. On the next server start `"auto"` uses the measured number. On a first install the
+   server has usually predicted the same number already, so nothing changes.
 4. For the detail, find `BepInEx\LogOutput.log` and grep for `[UltrawideStash]`.
 
 A measurement only takes effect on the **next** server start — the grid you are looking
@@ -498,32 +515,40 @@ Set those, or set `columns` to a number.
 You get one block per screen resolution per session, like:
 
 ```
+[UltrawideStash] widened: 'LeftSide' 1866.0 -> 1272.0 px, stash panel 680.0 -> 1250.0 px, gap between them 34.0 px.
+[UltrawideStash] the panel shows 19 columns.
 [UltrawideStash] ===== stash measurement =====
 [UltrawideStash] screen 3440x1440; canvas scale 1.333; canvas logical 2580x1080
-[UltrawideStash] stash grid 16x43 cells; rect 1009.0x2710.0 px (a 16-wide grid draws at 1009 px)
+[UltrawideStash] stash grid 19x36 cells; rect 1198.0x2269.0 px (a 19-wide grid draws at 1198 px)
 [UltrawideStash] out-of-bounds items: none
-[UltrawideStash] grid layout: 688 cells, consistent with 16x43
-[UltrawideStash] companion plugins: UI Fixes 3.2.0, Advanced Stash Sorting 1.0.6 (14 plugins loaded in total)
+[UltrawideStash] grid layout: 684 cells, consistent with 19x36
+[UltrawideStash] companion plugins: UI Fixes 6.0.3, Advanced Stash Sorting 1.0.5 (106 plugins loaded in total)
 [UltrawideStash] ancestors, grid outward -- name | rect | anchors | components:
-[UltrawideStash]   [0] Grid | 1009.0x2710.0 | ax 0.00-0.00 fixed | GridView,LayoutElement
-[UltrawideStash]   [1] Content | ... | ax 0.00-1.00 STRETCH | VerticalLayoutGroup,ContentSizeFitter
-[UltrawideStash]   [2] Viewport | ... | ax 0.00-0.00 fixed | RectMask2D,Image
+[UltrawideStash]   [0] GridView(Clone) | 1198.0x2269.0 | ax 0.00-0.00 fixed | GridView,LayoutElement
 [UltrawideStash]   ...
-[UltrawideStash] canvas width 2580.0 px; widest ancestor that stretches with it: 1920.0 px
-[UltrawideStash] columns that would fit the widest stretching ancestor: 30 (you have 16)
+[UltrawideStash]   [6] Stash Panel | 1250.0x873.0 | ax 1.00-1.00 fixed | -
+[UltrawideStash]   [7] Items Panel | 2580.0x1080.0 | ax 0.00-1.00 STRETCH | ItemsPanel,DrawMultiSelect
+[UltrawideStash]   ...
+[UltrawideStash] columns that fit inside the clipping ancestor: 19 (you have 19); panel 1250.0 px less 48.0 px of chrome
+[UltrawideStash] widening: room for 19 columns; the panel shows 19, the grid is 19
+[UltrawideStash] panel map -- 'Items Panel' and below, left to right, in canvas px:
+[UltrawideStash]   ...
+[UltrawideStash] CHECK: viewport 1202.0 px vs grid 1198.0 px -- fits, 4.0 px spare
 [UltrawideStash] measurement written to ...\UltrawideStash\ultrawidestash.measured.json -- restart the SPT server and "columns": "auto" will use it.
 [UltrawideStash] =============================
 ```
 
 What to read from it:
 
+- **`CHECK`** — read this first. `fits` is right. `OVERFLOW` means a horizontal
+  scrollbar (the grid is wider than the panel), and `DEAD SPACE` means empty columns
+  beside the grid.
 - **`out-of-bounds items`** — anything but `none` means the stash is holding items you
   cannot reach. Stop and restore a profile backup.
-- **The `STRETCH` / `fixed` column** — this is the answer. A `fixed` ancestor between
-  the grid and the canvas is what clips a widened grid, and its name and components say
-  exactly what a fix has to change.
-- **`columns that would fit`** — the ceiling for this monitor, and what gets written to
-  `ultrawidestash.measured.json`. You no longer have to copy it by hand.
+- **`widened:` / `nothing to widen:` / `cannot widen:`** — the line above the block. It
+  says what the probe did to the screen, or why it did nothing.
+- **The `STRETCH` / `fixed` column** — `Stash Panel` is the `fixed` ancestor that clips
+  the grid, and it is what the probe widens.
 - **`measurement written to`** — where it went. If it says it could not find the server
   mod folder, the server half is not installed where the loader looks, and `"auto"` will
   keep using its estimate.
@@ -531,6 +556,30 @@ What to read from it:
   sort, and this line is why.
 - **`companion plugins`** — which stash-touching mods were loaded, and at what version,
   so a report describes itself.
+- **`widening:`** — either the room there is (`room for 19 columns; the panel shows 19,
+  the grid is 19`) or why there is none (`not possible -- ...`). The room is what gets
+  written to `ultrawidestash.measured.json` (1.0.4). Before 1.0.4 the file held the
+  panel's width as it stood. The panel is widened only as far as the grid needs, and
+  any room left over is what `"auto"` grows into at the next server start.
+
+### My stash stays at 10 columns
+
+Look in the **server** log, just after the `Width:` line. When the game could not widen
+its stash panel, it says why, for example:
+
+```
+[UltrawideStash] The game could not widen its stash panel when it last measured it
+(2560x1440, where EFT's menus are 1920 px wide): the gear side of the inventory screen
+is 1206 px wide and keeps 1240 px for itself, which leaves no room for another column.
+The stash stays 10 columns wide. That is a 16:9 (or narrower) layout, ...
+```
+
+The usual cause is EFT itself running at a 16:9 resolution on a wider monitor. EFT's
+menus are 1920 px wide at *every* 16:9 resolution, so there is nothing to widen into.
+Set EFT's resolution in *Settings → Graphics* to your monitor's own, open your stash
+once, and restart the server. A 32:9 monitor (5120×1440) gets a 3840 px wide menu and
+a 39-column stash. That was checked by simulating a 5120×1440 layout on a 3440×1440
+display (1.0.4). It has not yet been run on a physical 32:9 monitor.
 
 ## Building
 
@@ -556,45 +605,45 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 
 ## Status
 
-Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-196 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
-`spt-*` reference and `pack.ps1` asserts it.
+Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5, and played on SPT 4.1.6.
+Clean at 0 warnings; 226 logic tests and 19 database checks pass. The probe carries no
+`Assembly-CSharp` or `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
-reading their code — see Compatibility — not by running them. None of the three is
-installed on the development machine.
+reading their code — see Compatibility. UI Fixes and Advanced Stash Sorting are loaded
+alongside it on the test install, but their sorting has not been exercised against a
+wide stash specifically.
 
-**Nothing here has run in the game.** Untested, in rough order of risk:
+**Verified in game**, on SPT 4.1.6 at 3440x1440:
 
-- **Writing to profiles.** From 0.4.0 the mod edits your profile JSON to keep items
-  reachable. It backs up first, writes to a temp file, replaces last, and refuses rather
-  than half-finishing — but it has never written a real profile. On a first widen the log
-  should say `0 item(s) relocated`, because widening alone cannot strand anything.
-  Anything else on a plain widen is a bug worth reporting.
-- **Whether the widened grid is drawn or clipped.** The whole reason the probe exists.
-- **The measurement handshake (0.6.0).** The probe writing
-  `ultrawidestash.measured.json` into the server mod's folder, and the server reading it
-  back, has never run. Both halves fail safe if it does not work — the probe logs why it
-  could not write, and `"auto"` falls back to the estimate — but the happy path is
-  unproven. Check the file appears after you open your stash, and that the next server
-  start logs `auto: N columns, from the probe's measurement`.
-- **Whether the estimate is pessimistic in the right direction.** It assumes the stash
-  panel has no slack beyond 16:9. If the panel is in fact *narrower* than the canvas,
-  an unmeasured ultrawide could still be given more columns than fit. That is what the
-  measurement exists to correct, and it is why the probe matters more than the estimate.
+- **The widened stash** — 19x36, drawn in full, no horizontal scrollbar, no dead space
+  (`CHECK ... fits, 4.0 px spare`).
+- **The measurement handshake** — the probe writes its file, and the next server start
+  logs `auto: 19 columns, from the probe's measurement`.
+- **Writing to profiles** — relocating out-of-bounds items in a loaded profile and saving
+  it through SPT (1.0.1), and a profile's `StashRows` bonus rows left alone (1.0.2).
+- **Never in raid** — a screen widened in the menu is put back to vanilla on the first
+  inventory open in raid (1.0.0).
+- **The mail transfer screen** — 19 columns, buttons clear (1.0.3).
+- **16:9 and 32:9 layouts, simulated** (1.0.4) — by setting EFT's UI scale so a
+  3440x1440 display lays the menu out as a 1920- or 3840-wide canvas. At 1920 the panel
+  stays vanilla and the log says why. At 3840 a 39x68 stash filled a 2510 px panel.
+
+**Not yet verified**, in rough order of risk:
+
+- **A physical 32:9 monitor.** 5120x1440 was only simulated on a 3440x1440 display. The
+  simulation cannot cover the server reading 5120x1440 from EFT's saved settings on its
+  first start, or anything a real 32:9 display does that a scaled canvas does not.
+- **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
+- **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same
+  code as the mail screen, but have not been played through.
+- **The server's "could not widen" warning** (1.0.4). Unit-tested only. Seeing it live
+  needs a start with a 10-column measurement, which narrows the stash.
 - **The Sorting Table overflow.** Re-parenting an item into the Sorting Table is written
   from the JSON shape rather than from watching the game do it. It only fires when the
   stash cannot take everything back.
-- **Whether the probe's Harmony patch fires at all.** `SimpleStashPanel.Show` is patched
-  with `MonoBehaviour __instance`, which is a genuine supertype, but that has not run.
-- **Whether the tallest GridView is really the stash.** It is by a wide margin on paper
-  — 30 rows minimum against a backpack's handful — but an open container has its own.
-- **A real played profile.** Every profile test runs against synthesised JSON; the only
-  profile on the development machine is an unplayed stub.
 - **`repair-stash.ps1` on a real profile.** Verified against synthesised data only, and
   it treats every item as 1×1 because it has no item database to size them from.
-- **The probe's diagnostics.** The companion census reads BepInEx's
-  `Chainloader.PluginInfos` and the layout line reads `Grid.Layout` — neither has run.
 
 ## Repository
 

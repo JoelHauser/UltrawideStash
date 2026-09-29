@@ -36,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -251,7 +251,13 @@ namespace UltrawideStash.Probe
             // Resize here, in Show, so the panel is already its full width on the
             // first frame the player sees. Deferring this to Update costs one frame
             // at the vanilla width and the stash visibly snaps wider on every open.
-            StashMeasure.WidenNow(__instance, Say);
+            //
+            // The grid's width comes off the stash item Show was handed, so the panel
+            // can stop at it rather than leave empty panel beside a narrower grid.
+            StashMeasure.WidenNow(
+                __instance,
+                GameTypes.FirstGridWidth(__args != null && __args.Length > 0 ? __args[0] : null),
+                Say);
 
             _pending = __instance;
             _framesWaited = 0;

@@ -63,6 +63,57 @@ public sealed class Measurement
     [JsonPropertyName("probeVersion")]
     public string? ProbeVersion { get; set; }
 
+    /// <summary>
+    /// Whether the character screen had room to widen the stash panel at all. Null in
+    /// files written by older probes, which did not say.
+    /// </summary>
+    [JsonPropertyName("canWiden")]
+    public bool? CanWiden { get; set; }
+
+    /// <summary>The probe's reason when <see cref="CanWiden"/> is false.</summary>
+    [JsonPropertyName("whyNot")]
+    public string? WhyNot { get; set; }
+
+    /// <summary>
+    /// A sentence for the server log when the game could not widen its stash panel,
+    /// or null when it could (or the file is too old to say).
+    ///
+    /// ## Why the server repeats what the client found
+    ///
+    /// A 10-column measurement is the one result that looks exactly like a broken mod,
+    /// and the reason for it was only ever in the BepInEx log. The first report of it
+    /// (Forge issue #1, a 5120x1440 monitor) came with neither log. The server log is
+    /// the one people look at and send, so the reason goes there too -- with the
+    /// likeliest cause spelled out when the canvas is 16:9: EFT's menus are 1920 wide
+    /// at any 16:9 resolution, so a wide monitor running EFT at a 16:9 resolution
+    /// gains nothing.
+    /// </summary>
+    public string? Diagnosis()
+    {
+        if (CanWiden != false) return null;
+
+        var why = string.IsNullOrWhiteSpace(WhyNot)
+            ? "the probe did not record why"
+            : WhyNot.Trim().TrimEnd('.');
+
+        var where = CanvasWidth > 0
+            ? $"{Screen ?? "an unknown screen"}, where EFT's menus are {CanvasWidth} px wide"
+            : Screen ?? "an unknown screen";
+
+        var text = $"The game could not widen its stash panel when it last measured it "
+                   + $"({where}): {why}. The stash stays {MaxColumns} columns wide.";
+
+        if (CanvasWidth > 0 && CanvasWidth <= StashFit.ReferenceWidth)
+        {
+            text += " That is a 16:9 (or narrower) layout, which has no spare width at any "
+                    + "resolution. If your monitor is wider than 16:9, set EFT's resolution "
+                    + "in Settings > Graphics to the monitor's own, then open your stash once "
+                    + "and restart this server.";
+        }
+
+        return text;
+    }
+
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,

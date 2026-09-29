@@ -56,7 +56,9 @@ namespace UltrawideStash.Probe
             int screenWidth,
             int screenHeight,
             int canvasWidth,
-            double panelWidth)
+            double panelWidth,
+            bool canWiden,
+            string whyNot)
         {
             try
             {
@@ -72,7 +74,8 @@ namespace UltrawideStash.Probe
                 var path = Path.Combine(folder, FileName);
 
                 File.WriteAllText(path, Json(
-                    maxColumns, screenWidth, screenHeight, canvasWidth, panelWidth),
+                    maxColumns, screenWidth, screenHeight, canvasWidth, panelWidth,
+                    canWiden, whyNot),
                     new UTF8Encoding(false));
 
                 return "measurement written to " + path
@@ -86,10 +89,10 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
-        /// Hand-rolled so the plugin needs no serializer reference. Five scalar fields,
-        /// two of them strings this code produces itself, so there is nothing here that
-        /// needs escaping -- but <see cref="Escape"/> runs anyway, because a path or a
-        /// version string is exactly the kind of value that grows a quote later.
+        /// Hand-rolled so the plugin needs no serializer reference. Scalar fields, the
+        /// strings among them produced by this plugin itself -- but <see cref="Escape"/>
+        /// runs on every one, because <c>whyNot</c> quotes a panel name and a config
+        /// path, which is exactly the kind of value that grows a quote later.
         ///
         /// <c>InvariantCulture</c> throughout: a machine with a comma decimal separator
         /// would otherwise write JSON the server cannot parse.
@@ -99,7 +102,9 @@ namespace UltrawideStash.Probe
             int screenWidth,
             int screenHeight,
             int canvasWidth,
-            double panelWidth)
+            double panelWidth,
+            bool canWiden,
+            string whyNot)
         {
             var sb = new StringBuilder();
 
@@ -116,6 +121,14 @@ namespace UltrawideStash.Probe
                           + canvasWidth.ToString(CultureInfo.InvariantCulture) + ",");
             sb.AppendLine("  \"panelWidth\": "
                           + panelWidth.ToString("0.##", CultureInfo.InvariantCulture) + ",");
+            sb.AppendLine("  \"canWiden\": " + (canWiden ? "true" : "false") + ",");
+
+            // Only when it could not: the server repeats it in its own log, which is
+            // the log a player reporting "it stays at 10 columns" is most likely to send.
+            if (!canWiden && !string.IsNullOrEmpty(whyNot))
+            {
+                sb.AppendLine("  \"whyNot\": \"" + Escape(whyNot) + "\",");
+            }
             sb.AppendLine("  \"measuredAtUtc\": \"" + Escape(
                 DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture))
                 + "\",");

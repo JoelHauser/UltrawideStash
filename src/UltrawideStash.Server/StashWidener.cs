@@ -252,6 +252,12 @@ public class StashWidener(
         // reasoning has to be in the log whether or not anything looks wrong.
         logger.Info($"[UltrawideStash] Width: {choice.Reason}. ({screenNote}.)");
 
+        // Why the client measured no room, when it measured no room -- see
+        // Measurement.Diagnosis. Warning, because the player has something to change.
+        var diagnosis = measurement?.Diagnosis();
+
+        if (diagnosis is not null) logger.Warning($"[UltrawideStash] {diagnosis}");
+
         if (choice.Source == ColumnChoice.Origin.Clamped)
         {
             logger.Warning(
@@ -296,7 +302,8 @@ public class StashWidener(
         // Explain a do-nothing run, but only when it really did nothing. A run that
         // clamped an over-wide config back to vanilla also changes no template, and
         // saying "no change was made" there would contradict the relocation count.
-        if (measurement is not null && applied == 0 && moved == 0 && choice.IsNoOp)
+        if (measurement is not null && diagnosis is null && applied == 0 && moved == 0
+            && choice.IsNoOp)
         {
             logger.Info(
                 "[UltrawideStash] No change was made, and on a 16:9 screen that is the correct "
