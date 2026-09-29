@@ -799,7 +799,8 @@ checks.
 once a player had it working on a physical 5120x1440 monitor. The re-release adds the
 server reading `GearPanelReserve` (see *A physical 32:9 monitor, and the reserve the
 server now reads*) and replaces the "32:9 only simulated" caveat. The `v1.0.5` tag moved
-to the re-release commit and was force-pushed, and the zip and notes were replaced.
+to the re-release commit and was force-pushed, and the zip and notes were replaced. DLLs
+now stamped `1.0.5+c3f521f`; 265 logic tests, 19 database checks.
 Anyone with the pre-release zip has the stretch but not the reserve check. The server
 log tells them apart: only the re-release's `Width:` line names the probe config.
 
