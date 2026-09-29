@@ -10,6 +10,11 @@ end to end on a 3440x1440 machine: 19 columns, 36 rows, capacity held at vanilla
 scrollbar and no dead space. Notes below describing untested arithmetic are history;
 the section marked *Verified in game* is not.
 
+**But that machine runs UIScale.Reloaded, which stretches the inventory screen -- and
+until 1.0.5 the mod only worked because of it.** On vanilla EFT the screen is a fixed
+16:9 frame and 1.0.4 and earlier widened nothing. See the last section, *It only ever
+worked under UIScale.Reloaded (1.0.5)*, before trusting any "verified" below.
+
 ## The box this was built on, and the box it runs on
 
 | | development | live |
@@ -1286,3 +1291,80 @@ templates to absolute values from its config, in an `IOnLoad` at
 `OnLoadOrder.Preload + 5` (100,005) -- long before this mod's `PostLoad`. So SVM's rows
 are the baseline: capacity is held at SVM's, and the uninstall path returns to SVM's
 rows. Nothing to change.
+
+
+## It only ever worked under UIScale.Reloaded (1.0.5)
+
+**Read this before trusting anything above that says "verified in game".** Every live
+run from 0.9.x to 1.0.4 was on an install with **UIScale.Reloaded** (vonbraunz,
+`com.vonbraunz.uiscale.reloaded`) loaded at its defaults. Its `InventoryStretchPatch`
+postfixes the 10-argument `InventoryScreen.Show` and, three frames later from a
+coroutine, stretches the inventory screen to the canvas: root anchors 0..1 with zero
+offsets; `LeftSide` (under Items Panel) anchors 0..1, offsets (12, 130) / (-702, -48);
+`Stash Panel` anchors (1,0)-(1,1), offsets (-692, 132) / (-12, -75). That is the layout
+the measured "12 | LeftSide | 10 | Stash Panel 680 | 12" came from, and so the server's
+`ScreenFurniturePixels = 714`. At Scale Percent 100 its canvas-scaler patch changes
+nothing, so the canvas widths recorded above are still the game's own.
+
+**Vanilla EFT is different.** Read off a clean 5120x1440 install (AsianMuppet, 6 plugins:
+Configuration Manager, this probe, SPT's four) sent with Forge issue #2, 2026-09-29:
+
+```
+[7] Items Panel | 1920.0x1080.0 | ax 0.00-1.00 STRETCH | ItemsPanel
+[8] InventoryScreen | 1920.0x1080.0 | ax 0.50-0.50 fixed | InventoryScreen,CanvasGroup,Canvas,GraphicRaycaster
+LeftSide | x 11.6 to 1224.9 | w 1213.3 | ax 0.48-0.79 STRETCH
+Stash Panel | x 1228.0 to 1908.0 | w 680.0 | ax 1.00-1.00 fixed
+```
+
+The inventory screen is a fixed 1920 px frame centred in the canvas at every aspect,
+so there is no slack in it at all, and 1.0.4 said `nothing to widen`. Issue #2 had the
+same from 5120x1440 (Zek), 3440x1440 and 2560x1080 (fbc7), and GuyNumber7 at 3440x1440.
+**It worked for nobody but the developer.** Found by grepping the live install's plugins
+for the UTF-16 strings `LeftSide` / `Items Panel` / `Stash Panel`: UIScale.Reloaded,
+MoxoPixel.MenuOverhaul (only copies Overall-tab prefabs), Tyfon.UIFixes (only adds
+`DrawMultiSelect` to Items Panel), Trenchfoot-BeltSlot and spt-singleplayer. Decompiling
+the first showed the stretch.
+
+It did damage on the way. The server's first-start prediction (19 or 39) assumed the
+stretched layout, so the grid widened and `compensateRows` repacked deep items into the
+wide columns; the probe then measured 10, and the next start narrowed and repacked again
+-- GuyNumber7's log: `Moved 202 back inside ... 280 item(s) relocated`. Nothing lost, but
+players' layouts were reshuffled twice. And 1.0.4's new diagnosis made it worse: it read
+the canvas width off `GetComponentInParent<Canvas>()`, which is the InventoryScreen's
+nested 1920 canvas, so it told 21:9 and 32:9 players they were running a 16:9 resolution.
+
+### The fix
+
+- **The probe stretches the frame itself** (`StashWiden.Stretch`) when the screen's
+  root (the ancestor carrying the `InventoryScreen` component) is narrower than what
+  holds it, and the stash panel is anchored right. Horizontal only: root x anchors 0..1,
+  x offsets 0; LeftSide x anchors 0..1, `StashPlan.StretchedLeftMargin` (12) and
+  `StretchedLeftSideRightOffset(680, 12)` (-702). Vertical is left as the game (or
+  another mod) set it. The numbers are UIScale's, so every install gets the layout the
+  arithmetic and the server's 714 were calibrated on; `StashPlanTests` ties them.
+- **Every open puts back, then plans.** `StashWiden` now remembers the root's x state,
+  LeftSide's four vectors and the panel's size the first time it touches them, restores
+  them at the start of every `Apply`, then stretches and widens. In raid, `Restore` puts
+  all of it back, the stretch included.
+- **A 30-frame watch** after each widening (`StashWiden.Watch`, from the plugin's
+  `Update`): if something rewrites LeftSide or the panel -- UIScale's coroutine can land
+  after the stash panel is shown -- the rewritten transform is adopted as the new
+  baseline and the widening applied again, at most three times per open.
+- **The report and the measurement read `canvas.rootCanvas`**, so `canvasWidth` is the
+  real canvas and the 16:9 advice only fires on a 16:9 screen.
+- **The server ignores measurements from probes before 1.0.5**
+  (`Measurement.PredatesTheStretch`, `FirstTrustedProbe`): on every non-UIScale install
+  they say 10. The prediction is used until 1.0.5 measures.
+
+Verified in game 2026-09-29 on the dev install at 3440x1440, **with UIScale.Reloaded
+switched off** (`Enabled = false`): `stretched: the inventory screen was a 1920.0 px
+frame in a 2580.0 px canvas`, then `'LeftSide' 1866.0 -> 1272.0 px, stash panel 680.0 ->
+1250.0 px`, 19 columns, `CHECK ... fits, 4.0 px spare`; in raid `inventory screen put
+back as it was, stash panel 680.0 px`. And with UIScale back on: no stretch line, the
+same widening, fits, no rewrite needed on either of two opens. 240 logic tests.
+
+**Test with UIScale off from now on**, or on a second install without it. The config
+switch is `[General] Enabled` in `BepInEx/config/com.vonbraunz.uiscale.reloaded.cfg`.
+
+Still not run: a physical 21:9 other than 3440x1440, a physical 32:9, and the server's
+ignore-old-measurement line in a live log.

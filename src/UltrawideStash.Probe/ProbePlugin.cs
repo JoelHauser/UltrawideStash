@@ -36,7 +36,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.4";
+        public const string PluginVersion = "1.0.5";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -270,6 +270,12 @@ namespace UltrawideStash.Probe
         private void Update()
         {
             ScreenWiden.Tick(Say);
+
+            // Another mod may rewrite the inventory layout a few frames after it opens
+            // (UIScale.Reloaded does); the widening is re-applied if so.
+            var rewatched = StashWiden.Watch();
+
+            if (rewatched != null) Say(rewatched);
 
             if (_pending == null) return;
 

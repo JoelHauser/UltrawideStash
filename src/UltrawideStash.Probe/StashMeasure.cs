@@ -384,7 +384,7 @@ namespace UltrawideStash.Probe
 
             sb.AppendLine(string.Format(
                 "canvas width {0:0.0} px; widest ancestor that stretches with it: {1:0.0} px",
-                canvas != null ? ((RectTransform)canvas.transform).rect.width : Screen.width / scale,
+                canvas != null ? ((RectTransform)canvas.rootCanvas.transform).rect.width : Screen.width / scale,
                 chain.WidestStretch));
 
             if (chain.Cap != null)
@@ -447,7 +447,7 @@ namespace UltrawideStash.Probe
             // effect on the next server start -- the grid on screen was built before
             // this ran -- which is the same rule ScreenFit follows in LoadingRaid.
             var canvasWidth = canvas != null
-                ? (int)Math.Round(((RectTransform)canvas.transform).rect.width)
+                ? (int)Math.Round(((RectTransform)canvas.rootCanvas.transform).rect.width)
                 : (int)Math.Round(Screen.width / scale);
 
             // The one line that settles whether the stash looks right.

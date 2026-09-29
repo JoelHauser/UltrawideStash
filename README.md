@@ -3,11 +3,15 @@
 Makes Escape from Tarkov's stash wider than 10 columns, so it fills the horizontal
 space an ultrawide monitor has and a 16:9 one does not.
 
-**It runs in game at 21:9.** Since 1.0.0 it has been played on SPT 4.1.6 at 3440x1440:
-a 19x36 stash in a widened panel, with no scrollbar and no dead space. **32:9 (5120x1440)
-has only been simulated** (1.0.4, on a 3440x1440 display: a 39-column stash filling the
-screen). It still needs a run on a physical 32:9 monitor. See [Status](#status) for what
-has and has not been checked.
+**It runs in game at 21:9, from 1.0.5 on any install.** Up to 1.0.4 it only widened
+the stash where **UIScale.Reloaded** was also installed, as it was on the development
+machine. That mod stretches EFT's inventory screen, which vanilla keeps as a fixed 16:9
+frame in the middle of the monitor. 1.0.5 does that stretch itself. It has been played
+on SPT 4.1.6 at 3440x1440, with UIScale.Reloaded and without it: a 19x36 stash in a
+widened panel, with no scrollbar and no dead space. **32:9 (5120x1440) has only been
+simulated** (on a 3440x1440 display: a 39-column stash filling the screen). It still
+needs a run on a physical 32:9 monitor. See [Status](#status) for what has and has not
+been checked.
 
 **On a 16:9 monitor this mod does nothing, and that is deliberate.** 1080p, 1440p and 4K
 all get exactly the same canvas width and none of them have room to spare — see
@@ -84,7 +88,7 @@ is for.
 | | Goes to | Does |
 | --- | --- | --- |
 | `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width, and keeps stored items inside it |
-| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Widens the stash panel in the menu (never in raid) — on the character screen, the scav loot transfer, receiving mail items and hideout area transfers — measures the character screen's, and writes it down for the server |
+| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Stretches EFT's 16:9 inventory screen to the full width, then widens the stash panel in the menu (never in raid) — on the character screen, the scav loot transfer, receiving mail items and hideout area transfers — measures the character screen's, and writes it down for the server |
 | `repair-stash.ps1` | `SPT_Runtime/user/mods/UltrawideStash/` | Standalone recovery. Needs only PowerShell — not the mod |
 
 The server half also writes two files into its own folder on first start:
@@ -340,6 +344,21 @@ game's own `inRaid` argument on `SimpleStashPanel.Show` and `ItemsPanel.Show`: i
 neither widens nor measures, and it puts a screen widened at the hideout stash back to
 vanilla before the raid inventory is drawn. The same fix covers vanilla crates and
 bodies, which go through the same panel.
+
+### UIScale.Reloaded — compatible, and the reason 1.0.4 and earlier ever worked
+
+In vanilla EFT the inventory screen is a fixed 1920 px frame centred on the monitor, at
+every aspect ratio. UIScale.Reloaded's inventory stretch widens it to the whole screen,
+putting `LeftSide` 12 px from the left and 702 px from the right, with the stash panel
+680 px wide and 12 px from the right. Every version before 1.0.5 was developed and
+tested with that mod installed, so it only worked alongside it. On every other install
+there was no room, and the stash stayed at 10 columns.
+
+1.0.5 makes the same stretch itself, to the same edges, when it finds the vanilla frame,
+and puts it back in raid. With UIScale.Reloaded installed there is nothing to stretch,
+and it widens UIScale's layout as before. UIScale applies its stretch a few frames after
+the screen opens. If that lands after the widening, the probe notices, logs it and
+widens again.
 
 ### Stash Management Helper — listed, not audited
 
@@ -606,7 +625,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5, and played on SPT 4.1.6.
-Clean at 0 warnings; 226 logic tests and 19 database checks pass. The probe carries no
+Clean at 0 warnings; 240 logic tests and 19 database checks pass. The probe carries no
 `Assembly-CSharp` or `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
@@ -614,8 +633,15 @@ reading their code — see Compatibility. UI Fixes and Advanced Stash Sorting ar
 alongside it on the test install, but their sorting has not been exercised against a
 wide stash specifically.
 
-**Verified in game**, on SPT 4.1.6 at 3440x1440:
+**Verified in game**, on SPT 4.1.6 at 3440x1440. Everything up to 1.0.4 ran on an
+install with UIScale.Reloaded, which is the only reason it worked there. See
+Compatibility.
 
+- **EFT's own inventory screen, stretched** (1.0.5) — with UIScale.Reloaded switched off,
+  the probe found the vanilla 1920 px frame in a 2580 px canvas, stretched it, and
+  widened the stash to 19 columns (`CHECK ... fits, 4.0 px spare`). The screen went back
+  to the vanilla frame in raid. With UIScale.Reloaded on again it did not stretch, and
+  widened UIScale's layout the same way.
 - **The widened stash** — 19x36, drawn in full, no horizontal scrollbar, no dead space
   (`CHECK ... fits, 4.0 px spare`).
 - **The measurement handshake** — the probe writes its file, and the next server start
@@ -625,9 +651,13 @@ wide stash specifically.
 - **Never in raid** — a screen widened in the menu is put back to vanilla on the first
   inventory open in raid (1.0.0).
 - **The mail transfer screen** — 19 columns, buttons clear (1.0.3).
-- **16:9 and 32:9 layouts, simulated** (1.0.4) — by setting EFT's UI scale so a
-  3440x1440 display lays the menu out as a 1920- or 3840-wide canvas. At 1920 the panel
-  stays vanilla and the log says why. At 3840 a 39x68 stash filled a 2510 px panel.
+- **16:9 and 32:9 layouts, simulated** (1.0.4, with UIScale.Reloaded) — by setting
+  EFT's UI scale so a 3440x1440 display lays the menu out as a 1920- or 3840-wide
+  canvas. At 1920 the panel stays vanilla and the log says why. At 3840 a 39x68 stash
+  filled a 2510 px panel.
+- **The server's "could not widen" warning** (1.0.4) — seen in a player's server log.
+  It gave the wrong advice there: it read the inventory screen's own 1920 px frame as the
+  menu width, so it called a 3440x1440 screen 16:9. 1.0.5 reads the real canvas.
 
 **Not yet verified**, in rough order of risk:
 
@@ -637,8 +667,11 @@ wide stash specifically.
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
 - **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same
   code as the mail screen, but have not been played through.
-- **The server's "could not widen" warning** (1.0.4). Unit-tested only. Seeing it live
-  needs a start with a 10-column measurement, which narrows the stash.
+- **A clean install with 1.0.5.** The stretch was verified with UIScale.Reloaded
+  switched off on the development install, which still runs about a hundred other
+  plugins, not on an install with nothing else loaded.
+- **The server ignoring a pre-1.0.5 measurement** (1.0.5). Unit-tested; its log line has
+  not been seen yet.
 - **The Sorting Table overflow.** Re-parenting an item into the Sorting Table is written
   from the JSON shape rather than from watching the game do it. It only fires when the
   stash cannot take everything back.

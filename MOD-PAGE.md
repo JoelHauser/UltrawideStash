@@ -98,7 +98,12 @@ those rows are kept. With the default settings your stash gets wider and shorter
 holds the same number of cells SVM gave it. Set `compensateRows: false` to keep SVM's
 rows and get the extra width as well.
 
-For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440. **32:9 (5120x1440) has only been
-simulated**, on a 3440x1440 display: it gave a 39-column stash that filled the screen.
-It hasn't been run on a physical 32:9 monitor yet. If you have one, please report how it
-looks.
+**UIScale.Reloaded** works too, but you no longer need it. Before 1.0.5 this mod only
+widened the stash if UIScale.Reloaded was installed as well. Without it, EFT keeps the
+inventory screen as a 16:9 block in the middle of the monitor, and the stash stayed at
+10 columns. 1.0.5 widens that block to the full screen itself.
+
+For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it.
+**32:9 (5120x1440) has only been simulated**, on a 3440x1440 display: it gave a
+39-column stash that filled the screen. It hasn't been run on a physical 32:9 monitor
+yet. If you have one, please report how it looks.

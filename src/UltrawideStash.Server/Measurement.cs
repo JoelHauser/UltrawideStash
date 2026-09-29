@@ -75,6 +75,32 @@ public sealed class Measurement
     public string? WhyNot { get; set; }
 
     /// <summary>
+    /// The first probe whose measurement can be trusted on an install without
+    /// UIScale.Reloaded.
+    ///
+    /// Up to 1.0.4 the probe could only widen a screen UIScale.Reloaded had already
+    /// stretched. On EFT's own inventory screen -- a fixed 1920 px frame -- it found no
+    /// room and wrote 10 columns, and the server shrank the stash to match, moving
+    /// items (Forge issues #1 and #2). 1.0.5 stretches that frame itself. A measurement
+    /// from before it says nothing true about the panel 1.0.5 will build.
+    /// </summary>
+    public static readonly Version FirstTrustedProbe = new(1, 0, 5);
+
+    /// <summary>
+    /// True when this was written by a probe older than <see cref="FirstTrustedProbe"/>,
+    /// or one that did not say which it was.
+    /// </summary>
+    public bool PredatesTheStretch()
+    {
+        if (string.IsNullOrWhiteSpace(ProbeVersion)) return true;
+
+        // "1.0.5", and anything a build stamp might add after it.
+        var core = ProbeVersion.Trim().Split('+', '-', ' ')[0];
+
+        return !Version.TryParse(core, out var version) || version < FirstTrustedProbe;
+    }
+
+    /// <summary>
     /// A sentence for the server log when the game could not widen its stash panel,
     /// or null when it could (or the file is too old to say).
     ///

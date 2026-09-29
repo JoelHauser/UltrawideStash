@@ -107,6 +107,30 @@ public class MeasurementDiagnosisTests
         }
     }
 
+    /// <summary>
+    /// Probes before 1.0.5 measured EFT's own 16:9 inventory frame, which they could
+    /// not widen, and wrote 10 columns on every install without UIScale.Reloaded
+    /// (Forge issues #1 and #2). Their files are ignored; 1.0.5's and later are not.
+    /// </summary>
+    [Theory]
+    [InlineData("1.0.4", true)]
+    [InlineData("1.0.2", true)]
+    [InlineData("0.9.3", true)]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("not a version", true)]
+    [InlineData("1.0.5", false)]
+    [InlineData("1.0.5+92e252d", false)]
+    [InlineData(" 1.0.6 ", false)]
+    [InlineData("1.1.0", false)]
+    [InlineData("2.0", false)]
+    public void MeasurementsFromBeforeTheStretchAreNotTrusted(string? probeVersion, bool predates)
+    {
+        var measured = new Measurement { MaxColumns = 10, ProbeVersion = probeVersion };
+
+        Assert.Equal(predates, measured.PredatesTheStretch());
+    }
+
     [Fact]
     public void AnOldFileStillReads()
     {

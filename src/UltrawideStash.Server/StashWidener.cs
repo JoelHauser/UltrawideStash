@@ -111,6 +111,23 @@ public class StashWidener(
             }
         }
 
+        // A measurement from a probe before 1.0.5 was taken on EFT's own 16:9 inventory
+        // frame, which those probes could not widen: it says 10 columns on any install
+        // without UIScale.Reloaded. Trusting it after an update would keep the stash at
+        // 10 for one more start, and repack items to fit. The prediction from the
+        // screen is what 1.0.5 actually builds, so that is used until it measures again.
+        if (measurement is not null && measurement.PredatesTheStretch())
+        {
+            logger.Info(
+                $"[UltrawideStash] The stored measurement was written by probe "
+                + $"{measurement.ProbeVersion ?? "(unknown)"}, which could not widen EFT's own "
+                + "inventory screen, so it has been ignored. The width is predicted from your "
+                + "screen until the game measures again.");
+
+            measurement = null;
+            measurementNote = "measurement from a probe before 1.0.5 ignored";
+        }
+
         var choice = ColumnChoice.For(
             settings.Columns,
             measurement,

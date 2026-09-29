@@ -139,6 +139,51 @@ public class StashPlanTests
     }
 
     /// <summary>
+    /// Vanilla EFT's inventory screen is a fixed 1920 frame; the probe stretches it to
+    /// the canvas the way UIScale.Reloaded does (the layout every earlier measurement
+    /// was taken under). Its LeftSide edges must be UIScale's -- 12 in from the left,
+    /// 702 in from the right -- and must add up to the 714 px of furniture the server's
+    /// prediction subtracts, or a first start sizes the grid for a different panel.
+    /// </summary>
+    [Fact]
+    public void TheStretchedLayoutIsUIScalesAndTheServersFurniture()
+    {
+        var right = StashPlan.StretchedLeftSideRightOffset(680f, 12f);
+
+        Assert.Equal(12f, StashPlan.StretchedLeftMargin);
+        Assert.Equal(-702f, right);
+        Assert.Equal(714f, StashPlan.StretchedLeftMargin - right);
+    }
+
+    /// <summary>
+    /// The clean 5120x1440 install from Forge issue #2: once stretched, LeftSide is
+    /// the canvas less the furniture, and the plan is the server's 39 columns.
+    /// </summary>
+    [Fact]
+    public void AStretchedVanillaScreenAt5120Gets39()
+    {
+        const float canvas = 3840f;
+        var leftSide = canvas - StashPlan.StretchedLeftMargin + StashPlan.StretchedLeftSideRightOffset(680f, 12f);
+
+        var plan = StashPlan.For(leftSide, Panel, Chrome, Reserve, 39);
+
+        Assert.Equal(39, plan.Columns);
+        Assert.Equal(StashFit.WidenedColumnsForScreen(5120, 1440), plan.Potential);
+    }
+
+    /// <summary>
+    /// The same install, unstretched, as 1.0.4 saw it: a 1213 px LeftSide in the
+    /// 1920 frame. Nothing to widen -- which is why the probe has to stretch first.
+    /// </summary>
+    [Fact]
+    public void TheUnstretchedVanillaFrameHasNoRoom()
+    {
+        var plan = StashPlan.For(1213.3f, Panel, Chrome, Reserve, 39);
+
+        Assert.False(plan.CanWiden);
+    }
+
+    /// <summary>
     /// The server predicts the probe's answer before the client has ever run, with its
     /// own copies of these constants (the halves are different frameworks and cannot
     /// share them). If they drift, a first start sizes the grid for a panel the client

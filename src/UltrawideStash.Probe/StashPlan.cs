@@ -59,6 +59,26 @@ namespace UltrawideStash.Probe
         /// <summary>The narrowest reserve per gear panel that still clears Gear Panel's 494 px.</summary>
         internal const float MinReservePerPanel = 520f;
 
+        /// <summary>
+        /// LeftSide's left margin once the inventory screen is stretched to the canvas.
+        /// UIScale.Reloaded's value, which every live measurement before 1.0.5 was taken
+        /// under; vanilla's own frame puts it at 11.6.
+        /// </summary>
+        internal const float StretchedLeftMargin = 12f;
+
+        /// <summary>The seam between LeftSide and the unwidened stash panel, stretched.</summary>
+        internal const float StretchedSeam = 10f;
+
+        /// <summary>
+        /// LeftSide's right offset once stretched: clear of the stash panel and the
+        /// seam. 680 px panel, 12 px right margin -> -702, UIScale.Reloaded's number,
+        /// and 12 + 702 = 714 is the furniture the server's prediction subtracts.
+        /// </summary>
+        internal static float StretchedLeftSideRightOffset(float panelWidth, float panelRightMargin)
+        {
+            return -(panelWidth + panelRightMargin + StretchedSeam);
+        }
+
         /// <summary>Columns the panel shows at its vanilla width.</summary>
         internal int Shown;
 
