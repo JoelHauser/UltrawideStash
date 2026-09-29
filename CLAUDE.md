@@ -781,6 +781,19 @@ screen's panel stops at the grid's width; the measurement records the room there
 `UltrawideStash_V1.0.4.zip`, DLLs stamped `1.0.4+92e252d`. 226 logic tests, 19 database
 checks. **32:9 was simulated on a 3440x1440 display, not run on a 32:9 monitor**, and
 the release notes say so -- a physical-monitor run is still owed.
+**It also only widened anything on installs running UIScale.Reloaded**, like every
+version before it -- found the next day; see 1.0.5.
+
+### 1.0.5, pre-release 2026-09-29 -- it works without UIScale.Reloaded
+
+From Forge issue #2 and AsianMuppet's clean 5120x1440 log: vanilla EFT's inventory
+screen is a fixed 16:9 frame, and the mod had only ever worked under UIScale.Reloaded's
+stretch. The probe now stretches the frame itself; the report and measurement read the
+root canvas; the server ignores pre-1.0.5 measurements. See *It only ever worked under
+UIScale.Reloaded (1.0.5)*. Published as a GitHub **pre-release** at the user's request,
+so 1.0.4 stays "latest" until players confirm it. Tagged `v1.0.5`,
+`UltrawideStash_V1.0.5.zip`, DLLs stamped `1.0.5+e3f3c73`. 240 logic tests, 19 database
+checks.
 
 ## Verified in game, 2026-09-21
 
