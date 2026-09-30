@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections;
 using System.Text;
@@ -44,9 +44,14 @@ namespace UltrawideStash.Probe
         internal const int GridBorderPixels = 1;
 
         /// <summary>
-        /// Screen sizes already reported, so opening the stash forty times in a
-        /// session writes one report rather than forty. A resolution change is a new
-        /// key and gets measured again.
+        /// Screens already reported, keyed by screen *and* resolution, so opening the
+        /// stash forty times in a session writes one report rather than forty. A
+        /// resolution change is a new key and gets measured again.
+        ///
+        /// Keyed by screen as well as size because the trader screen's panel is not
+        /// the character screen's, and its CHECK line is the only thing that says
+        /// whether a 19-wide grid fits on it. One report per screen is two lines in a
+        /// log against an unanswerable support question.
         /// </summary>
         private static readonly HashSet<string> Reported = new HashSet<string>();
 
@@ -80,20 +85,27 @@ namespace UltrawideStash.Probe
         /// Never throws into the caller: a probe that breaks the stash screen is
         /// worse than no probe.
         /// </summary>
-        internal static bool Report(MonoBehaviour panel, Action<string> log)
+        internal static bool Report(
+            MonoBehaviour panel,
+            ScreenPolicy screen,
+            Action<string> log)
         {
             try
             {
                 if (panel == null) return true;
 
-                var key = Screen.width + "x" + Screen.height;
+                var key = screen.KeyFor(Screen.width, Screen.height);
                 var reported = Reported.Contains(key);
 
+                // A screen that is not widened has nothing left to say about widening,
+                // so it counts as said.
+                var widenSaid = !screen.Widen || WidenSaid.Contains(key);
+
                 // Nothing left to do on this screen: WidenNow resized the panel during
-                // Show and the report for this resolution is already written. Bail
-                // before the grid search, which otherwise runs every frame of every
-                // open for a result that is thrown away.
-                if (reported && _widenSaid) return true;
+                // Show and the report for this screen and resolution is already
+                // written. Bail before the grid search, which otherwise runs every
+                // frame of every open for a result that is thrown away.
+                if (reported && widenSaid) return true;
 
                 var gridView = FindStashGridView(panel);
 
@@ -122,17 +134,17 @@ namespace UltrawideStash.Probe
                 // because the settle loop calls this four times and each call walks
                 // the chain -- work that buys nothing on a screen that opened
                 // normally, and that the player feels as a hitch.
-                if (Widen != null && !_widenSaid)
+                if (Widen != null && screen.Widen && !widenSaid)
                 {
                     int widenedColumns;
-                    ApplyWiden(gridView, Widen.Value, out widenedColumns);
+                    ApplyWiden(gridView, Widen.Value, screen, out widenedColumns);
                 }
 
                 if (reported) return true;
 
                 // Let the layout pass run before mapping the screen.
                 //
-                // Widening sets offsetMax and sizeDelta, which update those transforms
+                // Widening sets the two nodes' offsets, which update those transforms
                 // at once, but the children of a HorizontalLayoutGroup are not moved
                 // until Unity's next layout rebuild. Reporting in the same frame prints
                 // the panel's new width beside its children's old ones -- in the 0.8.0
@@ -147,7 +159,7 @@ namespace UltrawideStash.Probe
 
                 Reported.Add(key);
 
-                log(Build(panel, gridView));
+                log(Build(panel, gridView, screen));
 
                 return true;
             }
@@ -167,6 +179,8 @@ namespace UltrawideStash.Probe
         internal static void Forget()
         {
             Reported.Clear();
+            WidenSaid.Clear();
+            Chromes.Clear();
         }
 
         /// <summary>
@@ -219,8 +233,17 @@ namespace UltrawideStash.Probe
         /// </summary>
         internal static float? Widen;
 
-        /// <summary>Set once the widening has been logged, so it is said once.</summary>
-        private static bool _widenSaid;
+        /// <summary>
+        /// Screens whose widening has been logged, so each is said once. Keyed the
+        /// same way as <see cref="Reported"/>.
+        ///
+        /// This was a single bool until the trader screen joined in, and a single bool
+        /// is the kind of shared state that makes the second case look broken: the
+        /// character screen is always opened first, so it would claim the flag and the
+        /// trader screen's widening -- the new, unverified one, the only one worth a
+        /// log line -- would never be printed.
+        /// </summary>
+        private static readonly HashSet<string> WidenSaid = new HashSet<string>();
 
         /// <summary>
         /// Widen the panel during <c>Show</c>, before the frame is drawn.
@@ -239,9 +262,14 @@ namespace UltrawideStash.Probe
         /// runs. So the two are split -- resize now, measure when there is something
         /// to measure.
         /// </summary>
-        internal static void WidenNow(MonoBehaviour panel, Action<string> log)
+        internal static void WidenNow(
+            MonoBehaviour panel,
+            ScreenPolicy screen,
+            Action<string> log)
         {
-            if (Widen == null || panel == null) return;
+            if (Widen == null || panel == null || !screen.Widen) return;
+
+            var key = screen.KeyFor(Screen.width, Screen.height);
 
             try
             {
@@ -255,17 +283,15 @@ namespace UltrawideStash.Probe
                 if (chain.Cap == null) return;
 
                 int columns;
-                var said = StashWiden.Apply(chain.Cap, Chrome, Widen.Value, out columns);
+                var said = StashWiden.Apply(
+                    chain.Cap, ChromeFor(key), Widen.Value, screen, out columns);
 
-                if (!_widenSaid)
-                {
-                    _widenSaid = true;
-                    log(said);
-                }
+                if (WidenSaid.Add(key)) log(said);
             }
             catch (Exception e)
             {
-                log("could not widen the stash panel -- " + e.Message);
+                log("could not widen the stash panel on the "
+                    + screen.Label + " -- " + e.Message);
             }
         }
 
@@ -287,23 +313,41 @@ namespace UltrawideStash.Probe
         /// from the last time the screen was fully laid out -- <see cref="Build"/>
         /// takes it off the real chain and calls <see cref="LearnChrome"/> -- and
         /// defaults to the stock value until then.
+        ///
+        /// Remembered per screen. The character screen's stash panel and the trader
+        /// screen's are different prefabs, so one of them having a 48 px toolbar strip
+        /// and scrollbar says nothing about the other. Sharing one number would size a
+        /// panel from a reading taken off a different screen, and chrome is the term
+        /// that decides whether the last column lands under the scrollbar.
         /// </summary>
-        internal static float Chrome = DefaultChrome;
+        private static readonly Dictionary<string, float> Chromes =
+            new Dictionary<string, float>();
 
         /// <summary>Stash panel chrome on a stock 4.1.5: 680 px panel, 632 px viewport.</summary>
         internal const float DefaultChrome = 48f;
 
         /// <summary>
+        /// The chrome to size this screen's panel from: what was last measured on it,
+        /// or the stock value until it has been laid out once.
+        /// </summary>
+        private static float ChromeFor(string key)
+        {
+            float known;
+
+            return Chromes.TryGetValue(key, out known) ? known : DefaultChrome;
+        }
+
+        /// <summary>
         /// Record the chrome seen on a properly laid out screen, so the next Show
         /// sizes the panel from a real number rather than the default.
         /// </summary>
-        private static void LearnChrome(float measured)
+        private static void LearnChrome(string key, float measured)
         {
             // Bounded because this feeds a panel width. A chain that returns something
             // absurd should leave the known-good value alone rather than replace it.
             if (measured < 8f || measured > 200f) return;
 
-            Chrome = measured;
+            Chromes[key] = measured;
         }
 
         /// <summary>
@@ -312,7 +356,11 @@ namespace UltrawideStash.Probe
         /// The chain is walked into a throwaway buffer rather than reusing the
         /// report's, because this runs on every open and the report does not.
         /// </summary>
-        private static string ApplyWiden(Component gridView, float reservePerPanel, out int columns)
+        private static string ApplyWiden(
+            Component gridView,
+            float reservePerPanel,
+            ScreenPolicy screen,
+            out int columns)
         {
             columns = 0;
 
@@ -323,10 +371,14 @@ namespace UltrawideStash.Probe
             var canvas = gridView.GetComponentInParent<Canvas>();
             var chain = AppendChain(new StringBuilder(), gridRect, canvas);
 
-            return StashWiden.Apply(chain.Cap, chain.Chrome, reservePerPanel, out columns);
+            return StashWiden.Apply(
+                chain.Cap, chain.Chrome, reservePerPanel, screen, out columns);
         }
 
-        private static string Build(MonoBehaviour panel, Component gridView)
+        private static string Build(
+            MonoBehaviour panel,
+            Component gridView,
+            ScreenPolicy screen)
         {
             var sb = new StringBuilder();
 
@@ -341,6 +393,13 @@ namespace UltrawideStash.Probe
             if (scale <= 0f) scale = 1f;
 
             sb.AppendLine("===== stash measurement =====");
+            sb.AppendLine(string.Format(
+                "drawn on the {0} -- {1}, {2}",
+                screen.Label,
+                screen.Widen ? "panel widened" : "panel left alone",
+                screen.OwnsMeasurement
+                    ? "and this is the screen the server sizes the grid from"
+                    : "and the server's grid width does not come from here"));
             sb.AppendLine(string.Format(
                 "screen {0}x{1}; canvas scale {2:0.000}; canvas logical {3:0}x{4:0}",
                 Screen.width, Screen.height, scale,
@@ -383,7 +442,7 @@ namespace UltrawideStash.Probe
             // between 20 and 19, and 20 is a column drawn under the scrollbar.
             // This screen is fully laid out, so its chrome is the real one. Remember
             // it for the next Show, which cannot measure its own.
-            LearnChrome(chain.Chrome);
+            LearnChrome(screen.KeyFor(Screen.width, Screen.height), chain.Chrome);
 
             var fits = ColumnsThatFit(chain.Usable - chain.Chrome);
 
@@ -455,8 +514,27 @@ namespace UltrawideStash.Probe
             // as it stands *after* any widening, because the widening has already run
             // by the time the report is built -- otherwise the grid would be sized for
             // a panel that no longer exists.
-            sb.AppendLine(MeasurementFile.Write(
-                fits, Screen.width, Screen.height, canvasWidth, chain.Usable));
+            if (screen.OwnsMeasurement)
+            {
+                sb.AppendLine(MeasurementFile.Write(
+                    fits, Screen.width, Screen.height, canvasWidth, chain.Usable));
+            }
+            else
+            {
+                // Deliberately silent about its own column count.
+                //
+                // The server sizes the grid from one number, and the grid is that wide
+                // on all six screens. A screen that can show fewer columns than the
+                // character screen must not be the one that decides, or opening a
+                // trader would narrow the stash everywhere -- including on the screen
+                // that had the room for it. So this screen widens as far as it can,
+                // reports whether the grid fits, and writes nothing.
+                sb.AppendLine(string.Format(
+                    "no measurement written: the {0} does not size the grid, the character "
+                    + "screen does. This block is here to say whether the {1} columns the "
+                    + "server chose fit on this screen too.",
+                    screen.Label, columns));
+            }
 
             sb.Append("=============================");
 
@@ -595,7 +673,7 @@ namespace UltrawideStash.Probe
 
                 float left, right;
 
-                if (!EdgesInCanvasSpace(child, canvasRect, out left, out right)) continue;
+                if (!EdgesIn(child, canvasRect, out left, out right)) continue;
 
                 rows.Add(new PanelRow(child, left, right));
             }
@@ -702,16 +780,21 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
-        /// Where a RectTransform's left and right edges fall in the canvas's own
-        /// coordinates, with x measured from the canvas's left edge.
+        /// Where a RectTransform's left and right edges fall in another one's own
+        /// coordinates, with x measured from that reference's left edge.
         ///
         /// Goes through world corners rather than anchoredPosition because the
         /// panels sit under layout groups and pivots that are not all the same, and
         /// world corners are the one reading that does not care about either.
+        ///
+        /// The reference is the canvas for the panel map, and the stash panel's own
+        /// parent when <see cref="StashWiden"/> is deciding which sibling lies to its
+        /// left. Either works: the reading is relative and only ever compared against
+        /// another reading taken in the same space.
         /// </summary>
-        private static bool EdgesInCanvasSpace(
+        internal static bool EdgesIn(
             RectTransform node,
-            RectTransform canvasRect,
+            RectTransform reference,
             out float left,
             out float right)
         {
@@ -724,10 +807,10 @@ namespace UltrawideStash.Probe
                 node.GetWorldCorners(corners);
 
                 // Bottom-left and bottom-right, taken into the canvas's local space.
-                var a = canvasRect.InverseTransformPoint(corners[0]).x;
-                var b = canvasRect.InverseTransformPoint(corners[3]).x;
+                var a = reference.InverseTransformPoint(corners[0]).x;
+                var b = reference.InverseTransformPoint(corners[3]).x;
 
-                var origin = canvasRect.rect.xMin;
+                var origin = reference.rect.xMin;
 
                 left = Mathf.Min(a, b) - origin;
                 right = Mathf.Max(a, b) - origin;

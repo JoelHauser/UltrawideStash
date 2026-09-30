@@ -21,4 +21,21 @@
     <ProjectReference Include="..\..\src\UltrawideStash.Server\UltrawideStash.Server.csproj" />
   </ItemGroup>
 
+  <!--
+    The probe's screen table, compiled in rather than referenced.
+
+    It cannot be referenced: the probe is net472 and needs BepInEx and the game's Unity
+    assemblies to build at all. But the table is pure - a type name in, a policy out -
+    and it is what decides whether the character screen still gets widened and which
+    single screen is allowed to write the measurement the server reads. A typo in it
+    fails quietly, on somebody else's machine, which is exactly the shape of bug this
+    repo keeps finding the hard way. So it is tested here.
+
+    Anything added to this list has to stay free of UnityEngine.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\UltrawideStash.Probe\StashScreens.cs"
+             Link="Probe\StashScreens.cs" />
+  </ItemGroup>
+
 </Project>

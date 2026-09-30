@@ -174,6 +174,29 @@ flat, it goes up — losing an item is not an acceptable price for a tidy number
 
 **`verbose`** — log every stash's before and after rather than one summary line.
 
+### The client plugin's own settings
+
+The plugin half has a separate config, written by BepInEx on first run to
+`BepInEx/config/com.mybutthasarash.ultrawidestash.cfg`. It controls the *panel*, not the
+grid — how much room there is to draw the stash in, on each screen that draws one.
+
+**`WidenStashPanel`** — `true` narrows the gear side of the character screen and gives the
+width to the stash panel. This is what the mod is for. `false` leaves the screen alone, and
+be aware that it is not merely inert: the probe then measures a vanilla panel, writes 10
+columns, and the server reads that back on every start.
+
+**`GearPanelReserve`** — canvas px each of the two gear panels keeps, 620 by default. The
+game's own 16:9 layout gives them about 600. Below 520 the character doll starts to clip.
+
+**`WidenTraderScreen`** — `true` does the same on the trader screen. Your stash is drawn
+there too, at the same width, so without this a wide grid overflows the trader's stash
+panel into a horizontal scrollbar. It is switchable on its own because the character
+screen's widening has been run on a live ultrawide and this one has not.
+
+The four other screens that draw your stash — transfer, scav inventory, hideout area
+transfer and prestige transfer — are deliberately left alone, and the client log says so
+when you open one. You may see a horizontal scrollbar there.
+
 ### Every row is full width
 
 You will not get 16 slots per row and a short 12-slot row at the bottom. The grid is
@@ -498,7 +521,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5. Clean at 0 warnings;
-144 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
+182 logic tests and 19 database checks pass. The probe carries no `Assembly-CSharp` or
 `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
@@ -513,6 +536,12 @@ installed on the development machine.
   should say `0 item(s) relocated`, because widening alone cannot strand anything.
   Anything else on a plain widen is a bug worth reporting.
 - **Whether the widened grid is drawn or clipped.** The whole reason the probe exists.
+- **The trader screen's widening (1.1.0).** The character screen's layout was measured off
+  a live hierarchy; the trader screen's is discovered at runtime, because it is serialized
+  prefab data that cannot be read any other way. It fails safe — if the screen is not the
+  shape this assumes, nothing moves and the log says which precondition failed — but the
+  happy path is unproven. Open a trader and look for `widened the trader screen`, then at
+  the `CHECK:` line in that block. `WidenTraderScreen` turns it off on its own.
 - **The measurement handshake (0.6.0).** The probe writing
   `ultrawidestash.measured.json` into the server mod's folder, and the server reading it
   back, has never run. Both halves fail safe if it does not work — the probe logs why it

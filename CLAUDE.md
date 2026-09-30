@@ -325,14 +325,17 @@ src/UltrawideStash.Server/            .NET 10, SPTarkov.Server.Core
   ProfileStore.cs     reads a profile's stash off disk; writes moves back, with backup
   StashWidener.cs     IOnLoad at PostLoad; the only file that touches SPT or the database
 
-src/UltrawideStash.Probe/             net472, BepInEx -- changes nothing in the game
+src/UltrawideStash.Probe/             net472, BepInEx
   GameTypes.cs        every game member, resolved by patched name, in one place
+  StashScreens.cs     which of the six screens may be rearranged -- pure, and tested
+  ScreenFinder.cs     the walk up the hierarchy that identifies the screen
   StashMeasure.cs     the walk up the RectTransform chain, and the report
+  StashWiden.cs       narrows the left half, widens the panel, finds the neighbour
   MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
   ProbePlugin.cs      BepInPlugin; one postfix on SimpleStashPanel.Show, then poll
 
-tests/UltrawideStash.Server.Tests/    xunit, 162 tests
+tests/UltrawideStash.Server.Tests/    xunit, 182 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
   RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
@@ -342,6 +345,9 @@ tests/UltrawideStash.Server.Tests/    xunit, 162 tests
   StashRepackTests.cs           relocation, including the narrow-to-vanilla path
   ProfileStoreTests.cs          read/write round trips against real files on disk
   SortingTableOverflowTests.cs  the 7-wide overflow, end to end through a profile
+  StashScreensTests.cs          which screens widen, and that exactly one measures
+                                (the probe's StashScreens.cs is <Compile Include>d here;
+                                 it is net472 so it cannot be referenced, but it is pure)
 
 scripts/
   pack.ps1            build both halves, test, check references, stage, zip, install
@@ -676,6 +682,30 @@ records that the game's Sorting Table rescue does fire.
 
 Packed clean at 0 warnings, 162 logic tests, 19 database checks, references still clean.
 
+### 1.1.0 -- the trader screen, on branch `trader-screen-widening`
+
+Asked for directly: "lets impliment the ultrawide stash while in the trader screen", on a
+test branch. The stash grid was already `columns` wide there -- it is one item -- so what
+was missing was the panel to draw it in, and the shape of the fix was already written down
+under *The grid is global; the widening is one screen*. Read that section; it now records
+what was built.
+
+Three things came out of doing it that were not in the plan:
+
+1. **The obvious reserve rule is wrong.** "Narrow the left half back to its 16:9 width"
+   is exact arithmetic and screen-agnostic and gives **20** columns where 19 is verified.
+   Worked out on paper before it was written, which is the only reason it did not ship.
+2. **Growth had to move off `sizeDelta`.** It is pivot-dependent, and the trader screen's
+   pivot is prefab data. `offsetMin` is identical where the pivot is 1 and correct where
+   it is not.
+3. **Every piece of the probe's bookkeeping was single-instance**, and the character
+   screen is always opened first, so all of it would have been claimed before a trader was
+   ever opened.
+
+Clean at 0 warnings, 182 logic tests, 19 database checks, references still clean, packed
+to `releases\UltrawideStash_V1.1.0.zip`. **The trader screen's widening has not run in
+the game** -- the log lines to read are listed in that section.
+
 
 ## Verified in game, 2026-09-21
 
@@ -766,17 +796,17 @@ the new resolution -- but broken in between. **Not fixed.**
 
 ### The grid is global; the widening is one screen
 
-**`SimpleStashPanel` is on six screens, and only the character screen gets widened.**
-The stash is one item, its width lives in the template, so it is `columns` wide
-*everywhere it is drawn*. The panel fix is per-screen. Nobody had looked at the other
-five until the user asked, 2026-09-22.
+**`SimpleStashPanel` is on six screens.** The stash is one item, its width lives in
+the template, so it is `columns` wide *everywhere it is drawn*. The panel fix is
+per-screen. Nobody had looked at the other five until the user asked, 2026-09-22; the
+trader screen was done in 1.1.0.
 
 Read off the patched assembly -- every type carrying a `SimpleStashPanel` field:
 
 | Screen | Panel widened? |
 | --- | --- |
-| `EFT.UI.ItemsPanel` (`InventoryScreen`) -- the character screen | **yes** |
-| `EFT.UI.TraderDealScreen` | no |
+| `EFT.UI.ItemsPanel` (`InventoryScreen`) -- the character screen | **yes**, verified in game |
+| `EFT.UI.TraderDealScreen` | **yes** as of 1.1.0, unverified |
 | `EFT.UI.TransferItemsScreen` | no |
 | `EFT.UI.ScavengerInventoryScreen` | no |
 | `UI.Hideout.BaseHideoutAreaTransferItemsScreen<,>` | no |
@@ -786,26 +816,92 @@ To re-derive it, walk `MainModule.GetTypes()` and print every `FieldDefinition` 
 `FieldType.FullName` matches `SimpleStashPanel`. The instruction-operand sweep for the
 same string adds only the compiler-generated closures of those same types.
 
-`AfterStashShow` has **no screen filter** -- the postfix is on `SimpleStashPanel.Show`,
-so it runs on all six. What stops it doing damage on the other five is `StashWiden`'s
-own precondition: it needs a stretching sibling called `LeftSide` under the panel's
-parent, which is the character screen's layout, and returns `cannot widen: no 'LeftSide'
-beside the stash panel` otherwise. **That is a guard by accident, not by design.** It
-holds because the name is specific, but a screen that happens to have a `LeftSide` would
-be rearranged without anyone having decided it should be.
+`AfterStashShow` still has **no screen filter** -- the postfix is on
+`SimpleStashPanel.Show`, which all six call. Up to 1.0.0 what stopped it doing damage on
+the other five was `StashWiden`'s own precondition: it needed a stretching sibling called
+`LeftSide` under the panel's parent, which is the character screen's layout. **That was a
+guard by accident, not by design** -- it held because the name is specific, but a screen
+that happened to have a `LeftSide` would have been rearranged without anyone having
+decided it should be.
 
-What the other five actually look like with a 19-wide grid is **not verified**. The panel
-has a `ScrollRect`, so a horizontal scrollbar is likelier than a clip -- but whether that
-ScrollRect permits horizontal scrolling is serialized prefab data, which is the whole
-reason `StashMeasure` exists. Do not write down an answer read off the assembly here;
-open a trader and look. The client log will carry the `cannot widen` line, which is the
-cheap confirmation that the postfix fires there at all.
+`StashScreens` is that decision written down. `ScreenFinder` walks up from the panel,
+reads the component type names it passes (and their base types, most-derived first), and
+looks them up in a table; a screen is rearranged because it is on the list, not because
+of what its children are called. An unrecognised screen is left alone **and the log
+carries the component names seen on the way up**, which is the one thing needed to add it
+without another round of reading the assembly.
 
-Worth doing one day, and the shape is known: the same two RectTransforms against whatever
-each screen calls its left half. `StashWiden` already takes the panel and finds its
-neighbour by name, so it wants a per-screen neighbour name rather than the constant
-`LeftSideName`, plus a `CHECK` line per screen so the outcome is measured rather than
-argued. **Not built.**
+The four remaining screens are on the list as *recognised, left alone*, which the log
+says differently from *unknown*. One is a decision and the other is something to go and
+look at.
+
+### What the trader screen's widening does, and does not, know
+
+The neighbour is no longer a constant name. `LeftSide` is tried first, by name, so the
+character screen's widening cannot move by a pixel; everywhere else the neighbour is
+found by what it has to be -- a sibling of the stash panel, anchored to stretch, lying
+**wholly to the left** of the panel, wide enough to be the screen's other half, widest
+candidate wins.
+
+The left-of test is the one that earns its keep. A full-screen backdrop stretches and is
+the widest thing on the screen, so width and anchors alone would pick it every time, and
+narrowing it would move artwork while leaving the layout exactly where it was.
+
+**The reserve is still the same 1240 px** (`GearPanelReserve` x 2), and there is a trap
+in the obvious-looking alternative. A stretching neighbour absorbs the extra canvas 1:1 --
+on the character screen LeftSide is 1866 at canvas 2580 and 1206 at 1920, and
+2580 - 1920 = 660 = 1866 - 1206 exactly -- so "narrow it back to its 16:9 width" looks
+like a cleaner, screen-agnostic rule than a hard-coded reserve. It is also **wrong here**:
+it hands back 660 px of slack rather than 626, which comes to **20 columns** on a
+3440x1440 canvas against the 19 that is verified in game and pinned by
+`WidenedColumnsTests`. The 1240 reserve is 34 px more conservative than the game's own
+16:9 layout, and that 34 px is what keeps the answer at 19. Do not "simplify" it.
+
+Growth moved from `sizeDelta` to **`offsetMin`**. The cap is always horizontally pinned --
+that is what made it the cap -- so its two offsets are measured from the same anchor and
+moving `offsetMin` moves the left edge and nothing else, *whatever the pivot is*. On the
+character screen, whose panel has its pivot at the right edge, that is the same arithmetic
+1.0.0's `sizeDelta` write performed. On a screen whose pivot is anywhere else it is the
+difference between growing leftwards and growing half off the side of the monitor -- and
+the trader screen's pivot is serialized prefab data nobody has read.
+
+### Only one screen writes the measurement
+
+`ultrawidestash.measured.json` is written by the character screen and by nothing else.
+The server sizes the grid from a single number and the grid is that wide on all six
+screens, so a screen that could show fewer columns must not be the one that decides:
+opening a trader would otherwise narrow the stash everywhere, including on the screen
+that had the room for it. The trader screen widens as far as it can, prints its own
+`CHECK` line, and writes nothing. `ExactlyOneScreenWritesTheMeasurement` and
+`NoScreenWritesTheMeasurementWithoutBeingWidened` hold both halves of that.
+
+**A single bool would have hidden the whole feature.** `_widenSaid`, `Chrome`, `Reported`
+and the settle counter were all one-per-session or one-per-resolution, and the character
+screen is always opened first -- so it would have claimed the flag and the trader
+screen's widening, the new and unverified one, the only one worth a log line, would never
+have been printed. They are all keyed per screen now (`ScreenPolicy.KeyFor`). Chrome
+especially: the two panels are different prefabs and chrome is the term that decides
+whether the last column lands under the scrollbar.
+
+### Still not verified on the trader screen
+
+What the trader screen's hierarchy actually looks like is **serialized prefab data** and
+was not read off any assembly -- it is discovered at runtime, which is the whole reason
+`StashMeasure` exists. So open a trader and read the log:
+
+- `widened the trader screen: '<name>' ... px (<how>)` -- the `<how>` says whether the
+  neighbour was found by name or by geometry, and `<name>` is what the trader screen
+  calls its left half. **Write that name down here when it appears.**
+- the `CHECK:` line in that screen's measurement block. `fits` is the answer;
+  `OVERFLOW` means the reserve is too generous for that screen, `DEAD SPACE` means the
+  opposite.
+- `cannot widen the trader screen: ...` means the layout is not the shape this assumes,
+  and the message says which precondition failed.
+- `no measurement written: the trader screen does not size the grid` should appear in
+  that block and **must not** be replaced by a measurement line.
+
+`WidenTraderScreen` in the BepInEx config turns it off on its own, separately from the
+character screen, because one is verified in game and the other is not.
 
 The items question that came with it has a cleaner answer: **nothing outside the stash
 grid is touched on any screen.** The server iterates the five ids in `StashLadder.Rungs`

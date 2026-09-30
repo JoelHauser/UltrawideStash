@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -36,7 +37,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -52,6 +53,21 @@ namespace UltrawideStash.Probe
         /// so the postfix cannot measure directly.
         /// </summary>
         private static MonoBehaviour _pending;
+
+        /// <summary>
+        /// Which screen <see cref="_pending"/> is being drawn on. Worked out once in
+        /// the postfix rather than on every polling frame: the walk is cheap but it is
+        /// not free, and the answer cannot change between Show and the grid appearing.
+        /// </summary>
+        private static ScreenPolicy _pendingScreen;
+
+        /// <summary>
+        /// Screens already remarked on, so each says its piece once. Keyed by what
+        /// would be said, because an unrecognised screen is identified by its detail
+        /// line rather than by its label.
+        /// </summary>
+        private static readonly HashSet<string> ScreensSaid =
+            new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// Whether to take the slack out of the gear side and give it to the stash.
@@ -72,6 +88,16 @@ namespace UltrawideStash.Probe
         /// <see cref="StashWiden.DefaultReservePerPanel"/> for why 620.
         /// </summary>
         private ConfigEntry<float> _reserve;
+
+        /// <summary>
+        /// Whether the trader screen gets the same treatment as the character screen.
+        ///
+        /// On by default, because the stash grid is the width the server made it on
+        /// every screen that draws it: leaving the trader's panel at its stock width
+        /// means a wide grid overflowing it, and the player's own stash is half of what
+        /// a trader screen is for. Off leaves it stock, scrollbar and all.
+        /// </summary>
+        private ConfigEntry<bool> _widenTrader;
 
         private void Awake()
         {
@@ -95,7 +121,18 @@ namespace UltrawideStash.Probe
                 + "own 16:9 layout gives them about 600. Below 520 the character doll "
                 + "starts to clip.");
 
+            _widenTrader = Config.Bind(
+                "Layout",
+                "WidenTraderScreen",
+                true,
+                "Widen the stash panel on the trader screen too. The grid is the width the "
+                + "server made it everywhere it is drawn, so without this a wide stash "
+                + "overflows the trader screen's panel into a horizontal scrollbar. Has no "
+                + "effect unless WidenStashPanel is also true.");
+
             if (_widen.Value) StashMeasure.Widen = _reserve.Value;
+
+            StashScreens.WidenTraderScreen = _widenTrader.Value;
 
             GameTypes.Resolve();
 
@@ -142,13 +179,61 @@ namespace UltrawideStash.Probe
         /// </summary>
         private static void AfterStashShow(MonoBehaviour __instance)
         {
+            // Which of the six screens this is. The postfix has no screen filter --
+            // it is on SimpleStashPanel.Show, which all six call -- so this is where
+            // the filtering happens, and it is a decision rather than a side effect of
+            // what the children are called. See StashScreens.
+            string detail;
+            var screen = ScreenFinder.Identify(__instance, out detail);
+
+            Explain(screen, detail);
+
+            _pendingScreen = screen;
+
             // Resize here, in Show, so the panel is already its full width on the
             // first frame the player sees. Deferring this to Update costs one frame
             // at the vanilla width and the stash visibly snaps wider on every open.
-            StashMeasure.WidenNow(__instance, Say);
+            StashMeasure.WidenNow(__instance, screen, Say);
 
             _pending = __instance;
             _framesWaited = 0;
+        }
+
+        /// <summary>
+        /// Say once, per screen, what is going to happen on it.
+        ///
+        /// Worth the lines. The stash grid is <c>columns</c> wide on every screen that
+        /// draws it and the panel fix is per screen, so "this screen was left alone" is
+        /// the difference between a scrollbar somebody has to report and a scrollbar
+        /// already accounted for. An unrecognised screen also carries the component
+        /// names seen on the way up, which is the one thing needed to add it.
+        /// </summary>
+        private static void Explain(ScreenPolicy screen, string detail)
+        {
+            string message;
+
+            if (!screen.Recognised)
+            {
+                message = "the stash is being drawn on a screen this mod does not "
+                    + "recognise, so its panel is left alone and the grid may show a "
+                    + "horizontal scrollbar. " + detail;
+            }
+            else if (!screen.Widen)
+            {
+                message = "the stash is being drawn on the " + screen.Label
+                    + ", which is deliberately left alone -- nobody has looked at what a "
+                    + "wide grid does to it, so it may show a horizontal scrollbar.";
+            }
+            else if (detail.Length > 0)
+            {
+                message = screen.Label + ": " + detail;
+            }
+            else
+            {
+                return;
+            }
+
+            if (ScreensSaid.Add(message)) Say(message);
         }
 
         /// <summary>
@@ -166,7 +251,7 @@ namespace UltrawideStash.Probe
                 return;
             }
 
-            if (StashMeasure.Report(_pending, Say))
+            if (StashMeasure.Report(_pending, _pendingScreen, Say))
             {
                 _pending = null;
                 return;
