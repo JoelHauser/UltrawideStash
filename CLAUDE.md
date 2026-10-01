@@ -1540,11 +1540,9 @@ forces a canvas update on every arrange, including each Guard re-layout.
   on first loads, trader clicks, Buy / Sell and returning from the character screen;
   mail re-checked with the shared code (684 -> 1250, fits). Add offer -- 1200 -> 1770,
   19 columns, fits, reopen stays 1770, dragged window kept on screen.
-- **5120x1440: not run.** `TheTraderScreenAt32By9GetsAllThirtyNineColumns` lays the
-  3440 layout out by its anchors on a 3840 canvas (deal column slides ~875 of ~993 px);
-  the add-offer window comes to ~3030 px. Both assume the screens keep their 21:9 shape.
-  The owed run: a 32:9 player opening a trader and Add offer, sending
-  `===== trader: stash panel =====` and `flea add offer window: ... CHECK`.
+- **5120x1440: run by a player, and the trader assumption was wrong** -- see *The trader
+  screen at 32:9 (Forge issue #3)* below. The add-offer window was fine there:
+  `1200 -> 3030 px ... (39 columns)`, `fits, 4.0 px spare`.
 - Scav and hideout transfers now use `SteadyChrome` too; neither has been re-run.
 
 ### Traps from this one
@@ -1556,3 +1554,42 @@ forces a canvas update on every arrange, including each Guard re-layout.
 - **A Bash heredoc with C# in it can fail to parse** (an unmatched-quote error at EOF)
   even with a quoted delimiter. Write the edit script to a file and run it.
 - **Do not copy the probe DLL while EFT is running** -- check `tasklist` first.
+
+## The trader screen at 32:9 (Forge issue #3)
+
+sp-mod.com/mod/3053/ultrawide-stash/issues/3, 2026-10-01: Островський, physical
+5120x1440, 1.1.0, UI Fixes and MoxoPixel-MenuOverhaul loaded, no UIScale. The log came
+as a PrivateBin paste on codepaste.sp-mod.com -- WebFetch sees an empty page; fetch
+`?<id>` with `X-Requested-With: JSONHttpRequest` and decrypt locally (base58 key from
+the fragment, PBKDF2-SHA256, AES-256-GCM with the JSON-encoded `adata` as AAD, raw
+inflate). Imgur albums are blocked to WebFetch; curl the album page for `i.imgur.com`
+links.
+
+**At 32:9 the trader screen is a 1920 px frame**, centred in the 3840 canvas
+(`Overlay Layer` x -960..960, `Left Person` -952..-310, `Right Person` 310..952). At
+21:9 it spans the canvas (-1282..1282). What caps it was not found: the unpatched
+assembly has no aspect type, and the patched one is not on the development box any more.
+`TheTraderScreenAt32By9GetsAllThirtyNineColumns` had assumed the 21:9 shape, so it
+passed while the game gave **11 of 39 columns** and a sideways scrollbar. That is the
+`MaxColumns = 40` trap again: a test fed the shape of the box it was written on.
+
+Two faults, both fixed on `main` after 1.1.0 (not yet released; 277 logic tests):
+
+- **`ScreenWiden.StretchScreen`** -- trader only. When the screen is narrower than the
+  root canvas and the stash panel is its direct child pinned right, its offsets are
+  pushed out to the canvas edges (anchor-agnostic, horizontal only). It is remembered, so
+  `Restore` undoes it, held by `Guard`, and undone again when the plan widens nothing.
+  The showcase rides to the left edge and the stash to the right: the 21:9 shape, which
+  `ScreenLayout.Plan` turns into 39 columns. Nothing clips past the frame -- the
+  reporter's screenshot shows the stash drawn to the monitor's edge.
+- **The corrective retry boosted on a room-limited overflow.** Phase 1's CHECK overflow
+  (878 px, because the plan *chose* 25 columns) was added to the chrome, giving 889 px
+  of "chrome". `Begin` plans with the steady 10 and phase 0 with the boosted 889, so
+  every open flipped `Right Person` between 1897 and 1900 (`re-plan moved things on
+  screen`, in pairs). The retry now boosts by `ScreenLayout.ShortOfPlan` -- how far the
+  viewport falls short of the columns the plan made room for -- and not at all when it
+  does not.
+
+**Not run in game.** The owed check is a 32:9 trader log showing `stretched: the trader
+screen was a 1920 px frame in a 3840 px canvas`, `room for 39`, `CHECK ... fits`, and no
+`re-plan moved` pairs on later opens.

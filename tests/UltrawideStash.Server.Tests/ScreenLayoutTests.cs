@@ -305,6 +305,106 @@ public class ScreenLayoutTests
         Assert.True(control.Box.XMin - plan.Shift >= left.Box.XMax + ScreenLayout.Gap - 0.01f);
     }
 
+    // ---- the trader screen at 32:9, as it really is ----------------------------------
+    //
+    // Forge issue #3 (2026-10-01), a physical 5120x1440 monitor, 1.1.0. The test above
+    // assumed the trader screen spans the canvas at 32:9 as it does at 21:9. It does
+    // not: it is a 1920 px frame centred in the 3840 canvas ('Overlay Layer' -960..960),
+    // and the stash panel was given 11 of 39 columns. Boxes read off that log.
+
+    private static readonly Box Canvas32By9 = new(-1920f, -540f, 1920f, 540f);
+
+    private static readonly Box TraderFrame32By9 = new(-960f, -540f, 960f, 482f);
+
+    private static Obstacle LiveControl() => new() { Name = "TradeControll", Box = new Box(-253f, -468f, 253f, 277f), Movable = true, CanRide = true };
+
+    private static Obstacle LiveBarter() => new() { Name = "Barter Scheme Panel", Box = new Box(-253f, -465f, 253f, 233f), IsButton = true, CanRide = true };
+
+    private static Obstacle LiveShowcase(float dx = 0f) => new() { Name = "Left Person", Box = new Box(-952f + dx, -465f, -310f + dx, 277f), Movable = true, CanRide = true };
+
+    private static Box LiveTraderPanel(float dx = 0f) => new(310f + dx, -465f, 952f + dx, 277f);
+
+    [Fact]
+    public void TheTraderFrameAt32By9IsStretchedByHalfTheSpareCanvasEachSide()
+    {
+        Assert.True(ScreenLayout.StretchToCanvas(TraderFrame32By9, Canvas32By9, out var left, out var right));
+        Assert.Equal(960f, left);
+        Assert.Equal(960f, right);
+    }
+
+    [Fact]
+    public void ATraderScreenThatAlreadySpansTheCanvasIsNotStretched()
+    {
+        // 21:9, where the 1.1.0 trader widening was verified: the screen is the canvas.
+        Assert.False(ScreenLayout.StretchToCanvas(Canvas, Canvas, out _, out _));
+        Assert.False(ScreenLayout.StretchToCanvas(new Box(-1290.4f, -540f, 1289.8f, 540f), Canvas, out _, out _));
+    }
+
+    /// <summary>
+    /// The bug as reported, unstretched: one neighbour slid into its own margin, and
+    /// the 960 px either side of the frame out of reach.
+    /// </summary>
+    [Fact]
+    public void TheUnstretchedTraderFrameAt32By9CannotHoldThirtyNineColumns()
+    {
+        var plan = ScreenLayout.Plan(
+            Canvas32By9, LiveTraderPanel(), new List<Obstacle> { LiveControl(), LiveBarter(), LiveShowcase() }, 39, 10f, 38f);
+
+        Assert.True(plan.Columns < 39);
+    }
+
+    /// <summary>
+    /// The same screen after the stretch: the showcase and the stash ride to the canvas
+    /// edges with their frame edges (ax 0 and ax 1), the deal column stays centred.
+    /// </summary>
+    [Fact]
+    public void TheStretchedTraderFrameAt32By9GetsAllThirtyNineColumns()
+    {
+        ScreenLayout.StretchToCanvas(TraderFrame32By9, Canvas32By9, out var left, out var right);
+
+        var control = LiveControl();
+        var barter = LiveBarter();
+        var showcase = LiveShowcase(-left);
+        const float overhang = 38f;
+
+        var plan = ScreenLayout.Plan(
+            Canvas32By9, LiveTraderPanel(right), new List<Obstacle> { control, barter, showcase }, 39, 10f, overhang);
+
+        Assert.True(plan.Changed);
+        Assert.Equal(39, plan.Columns);
+        Assert.Same(control, plan.Neighbour);
+        Assert.Equal(new[] { barter }, plan.Riders);
+        Assert.True(control.Box.XMax - plan.Shift + ScreenLayout.Gap <= plan.Left - overhang + 0.01f);
+        Assert.True(control.Box.XMin - plan.Shift >= showcase.Box.XMax + ScreenLayout.Gap - 0.01f);
+        Assert.True(plan.Right <= Canvas32By9.XMax);
+    }
+
+    // ---- the corrective re-plan ------------------------------------------------------
+
+    /// <summary>
+    /// The 32:9 log: a plan with room for 25 columns, a 1580 px viewport, a 39-wide
+    /// grid overflowing by 878 px. Those 25 columns fit; the chrome was right. 1.1.0
+    /// added the 878 to the chrome anyway and planned with 889 px of it.
+    /// </summary>
+    [Fact]
+    public void AnOverflowFromRunningOutOfRoomIsNotAChromeError()
+    {
+        Assert.Equal(0f, ScreenLayout.ShortOfPlan(25, 1580f));
+    }
+
+    [Fact]
+    public void AViewportNarrowerThanThePlannedColumnsIsShortByTheDifference()
+    {
+        // 39 columns are 2458 px; a viewport 6 px short of them.
+        Assert.Equal(6f, ScreenLayout.ShortOfPlan(39, 2452f));
+    }
+
+    [Fact]
+    public void APlanThatWidenedNothingIsNeverShort()
+    {
+        Assert.Equal(0f, ScreenLayout.ShortOfPlan(0, 632f));
+    }
+
     [Fact]
     public void WithoutTheBuyPanelRidingAlongTheTraderStashStopsShort()
     {

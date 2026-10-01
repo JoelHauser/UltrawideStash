@@ -175,6 +175,41 @@ namespace UltrawideStash.Probe
             return columns * CellPixels + 1f;
         }
 
+        /// <summary>
+        /// How far a screen's left edge has to move left, and its right edge right, for
+        /// it to span the canvas. False when it already does, to within a pixel.
+        ///
+        /// At 21:9 the trader screen spans the canvas; at 32:9 (5120x1440, canvas 3840)
+        /// it is a 1920 px frame in the middle, with the showcase and the stash pinned
+        /// to the frame's edges and 960 px of nothing either side of it. The planner
+        /// slides one neighbour into its own margin, so it never reaches that space --
+        /// 11 of 39 columns in the first 32:9 log. Spanning the canvas gives the screen
+        /// the shape it has at 21:9, which is the one the planner was verified on.
+        /// </summary>
+        internal static bool StretchToCanvas(Box screen, Box canvas, out float left, out float right)
+        {
+            left = Math.Max(0f, screen.XMin - canvas.XMin);
+            right = Math.Max(0f, canvas.XMax - screen.XMax);
+
+            return left + right > 1f;
+        }
+
+        /// <summary>
+        /// How far the viewport falls short of a grid of the columns the plan sized it
+        /// for: chrome the plan did not know about. Zero when the plan widened nothing.
+        ///
+        /// Not the grid's overflow. A plan that ran out of room gives fewer columns than
+        /// the grid on purpose, and the overflow then says nothing about the chrome.
+        /// Adding it anyway is what planned 889 px of "chrome" on the first 32:9 trader
+        /// log, and why every open there flipped the panel between two widths.
+        /// </summary>
+        internal static float ShortOfPlan(int plannedColumns, float viewport)
+        {
+            if (plannedColumns <= 0) return 0f;
+
+            return Math.Max(0f, WidthOfColumns(plannedColumns) - viewport);
+        }
+
         /// <summary>Columns fully visible in a panel this wide.</summary>
         internal static int ColumnsIn(float panelWidth, float extra)
         {

@@ -345,12 +345,16 @@ namespace UltrawideStash.Probe
                     return;
                 }
 
-                if (said.Overflow > 0f && !_retried)
+                var shortBy = ScreenLayout.ShortOfPlan(_plannedColumns, said.Viewport);
+
+                if (said.Overflow > 0f && shortBy > 0f && !_retried)
                 {
-                    // The chrome here differs from what was measured. Plan again with
-                    // the difference added; the check after it is the last word.
+                    // The chrome here differs from what was measured: the columns the
+                    // plan made room for do not fit. Plan again with the difference
+                    // added; the check after it is the last word. An overflow from a
+                    // plan that ran out of room is not this, and is left alone.
                     _retried = true;
-                    _extraBoost += said.Overflow + 1f;
+                    _extraBoost += shortBy + 1f;
                     _phase = 0;
                     return;
                 }
@@ -613,6 +617,7 @@ namespace UltrawideStash.Probe
             sb.AppendLine(string.Format("===== {0}: stash panel =====", Label(_kind)));
 
             Applied.Clear();
+            _plannedColumns = 0;
 
             var cap = CapOf(panel);
 
@@ -633,6 +638,9 @@ namespace UltrawideStash.Probe
                 return sb.ToString();
             }
 
+            var root = screen.transform as RectTransform;
+            var stretched = _kind == StashScreen.Trader ? StretchScreen(cap, root, canvasRt) : null;
+
             // The screen may have been shown this frame; its layout groups have not
             // placed the buttons yet.
             Canvas.ForceUpdateCanvases();
@@ -646,6 +654,8 @@ namespace UltrawideStash.Probe
                 Screen.width, Screen.height, canvas.Width, canvas.Height, cap.name, panelBox, panelBox.Width,
                 gridColumns, ScreenLayout.WidthOfColumns(gridColumns) + chrome + ScreenLayout.ScrollSlack, chrome,
                 ScreenLayout.ScrollSlack));
+
+            if (stretched != null) sb.AppendLine(stretched);
 
             // The trader screen's layout has never been read off a live game. Say what
             // it is, once per resolution, so the first log answers any question the
@@ -662,6 +672,7 @@ namespace UltrawideStash.Probe
                     "cannot widen: '{0}' is {1:0} px, which is not a stash panel. The screen's layout "
                     + "has changed and widening it blind would be worse than leaving it alone.",
                     cap.name, panelBox.Width));
+                if (stretched != null) Restore(cap);
                 return sb.ToString();
             }
 
@@ -671,6 +682,7 @@ namespace UltrawideStash.Probe
             {
                 sb.AppendLine(string.Format(
                     "cannot widen: '{0}' is sized by {1}, which would undo any change.", cap.name, driver));
+                if (stretched != null) Restore(cap);
                 return sb.ToString();
             }
 
@@ -714,7 +726,17 @@ namespace UltrawideStash.Probe
 
             sb.AppendLine("plan: " + plan.Why);
 
-            if (!plan.Changed) return sb.ToString();
+            if (!plan.Changed)
+            {
+                // A stretch that buys nothing only moves the showcase to the edge.
+                if (stretched != null)
+                {
+                    Restore(cap);
+                    sb.AppendLine("the stretch is undone: it made no room the plan could use.");
+                }
+
+                return sb.ToString();
+            }
 
             var neighbour = plan.Neighbour != null ? Refs[plan.Neighbour] : null;
 
@@ -771,6 +793,9 @@ namespace UltrawideStash.Probe
 
             foreach (var rt in slid) Applied.Add(new Saved { Rect = rt, OffsetMin = rt.offsetMin, OffsetMax = rt.offsetMax });
 
+            if (stretched != null) Applied.Add(new Saved { Rect = root, OffsetMin = root.offsetMin, OffsetMax = root.offsetMax });
+
+            _plannedColumns = plan.Columns;
             _guarded = panel;
             _guardedScreen = screen;
             _guardedColumns = gridColumns;
@@ -792,6 +817,45 @@ namespace UltrawideStash.Probe
                     : string.Empty));
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Make the trader screen span the canvas when it is a narrower frame inside it,
+        /// as it is at 32:9. Horizontal only, and through offsets, so it is the same
+        /// whatever the screen's anchors are: the stash panel, pinned to the screen's
+        /// right edge, rides out to the canvas edge, the showcase to the left one, and
+        /// the deal column stays in the middle -- the 21:9 shape.
+        ///
+        /// Remembered like everything else moved for the panel, so the next
+        /// <see cref="Restore"/> puts it back. Nothing past the frame clips: the first
+        /// 32:9 screenshot shows the stash drawn out to the monitor's right edge.
+        /// </summary>
+        /// <returns>A line for the log when it stretched, else null.</returns>
+        private static string StretchScreen(RectTransform cap, RectTransform root, RectTransform canvasRt)
+        {
+            if (root == null || root == canvasRt) return null;
+
+            // The stash panel has to be pinned to this screen's right edge for the
+            // stretch to carry it there. It is on the trader screen; anything else is
+            // a layout this has not seen.
+            if (cap.parent != root) return null;
+            if (Math.Abs(cap.anchorMin.x - 1f) > 0.001f || Math.Abs(cap.anchorMax.x - 1f) > 0.001f) return null;
+
+            var screenBox = Measure(root, canvasRt);
+            var canvas = Measure(canvasRt, canvasRt);
+
+            if (!ScreenLayout.StretchToCanvas(screenBox, canvas, out var left, out var right)) return null;
+
+            Remember(cap, root);
+
+            var scale = ScaleOf(root.parent, canvasRt).x;
+
+            root.offsetMin = new Vector2(root.offsetMin.x - left / scale, root.offsetMin.y);
+            root.offsetMax = new Vector2(root.offsetMax.x + right / scale, root.offsetMax.y);
+
+            return string.Format(
+                "stretched: the trader screen was a {0:0} px frame in a {1:0} px canvas; it now spans it.",
+                screenBox.Width, canvas.Width);
         }
 
         private static string ReportKey()
@@ -1026,6 +1090,9 @@ namespace UltrawideStash.Probe
         /// <summary>The panel's planned width, in its own units.</summary>
         private static float _planned;
 
+        /// <summary>Columns the last plan made room for; zero when it widened nothing.</summary>
+        private static int _plannedColumns;
+
         private static bool _rewriteSaid;
 
         /// <summary>Re-layouts the guard has done this open; see <see cref="MaxRewrites"/>.</summary>
@@ -1164,6 +1231,7 @@ namespace UltrawideStash.Probe
             internal string Text;
             internal string Summary;
             internal float Overflow;
+            internal float Viewport;
         }
 
         /// <summary>
@@ -1227,6 +1295,7 @@ namespace UltrawideStash.Probe
                 Text = sb.ToString(),
                 Summary = line + "; " + buttons,
                 Overflow = spare < 0f ? -spare : 0f,
+                Viewport = viewport,
             };
         }
 
