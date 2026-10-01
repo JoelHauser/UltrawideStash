@@ -813,7 +813,8 @@ had kept the 10-column panel since 1.0.0: the trader screen was on `OtherScreens
 deliberately, and the add-offer window has no stash panel, so nothing ever saw it. A
 minor version rather than 1.0.6 because it is new behaviour on two screens, not a fix.
 See *Traders and the flea add-offer window (1.1.0)*. Tagged `v1.1.0`,
-`UltrawideStash_V1.1.0.zip`. 270 logic tests, 19 database checks. Verified in game at
+`UltrawideStash_V1.1.0.zip` (sha256 `9b5b4dc8735c818f...`), DLLs stamped `1.1.0+e6a2730`.
+270 logic tests, 19 database checks. Verified in game at
 3440x1440 only; 32:9 is arithmetic and a planner test.
 
 ## Verified in game, 2026-09-21
