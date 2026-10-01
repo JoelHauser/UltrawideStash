@@ -715,10 +715,12 @@ Compatibility.
 **Not yet verified**, in rough order of risk:
 
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
-- **The trader screen and the add-offer window at 32:9** (1.1.0). Worked out, not run: on
-  a 3840-wide canvas a 39-column stash fits on the trader screen with the deal column
-  slid about 875 of the 990 px it has, and the add-offer window comes to about 3030 px.
-  The trader screen is assumed to fill the canvas at 32:9 as it does at 21:9.
+- **The trader screen at 32:9** (1.1.1). A player's 1.1.0 log (Forge issue #3) showed
+  that at 5120x1440 EFT draws the trader screen as a 1920 px block in the middle of the
+  monitor, not full width as at 21:9, so the stash got 11 of 39 columns and scrolled
+  sideways. 1.1.1 widens that block to the full screen first. Worked out from that log
+  and unit-tested, not yet run. The add-offer window was fine in the same log: 39
+  columns, `fits, 4.0 px spare`.
 - **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
   been seen in a live log.
 - **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same

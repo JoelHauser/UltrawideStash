@@ -113,6 +113,7 @@ inventory screen as a 16:9 block in the middle of the monitor, and the stash sta
 
 For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it,
 and **by a player on a real 5120x1440 (32:9) monitor**, where the stash filled the
-screen. The trader screen and the flea window (1.1.0) have been tested at 3440x1440 only.
-At 5120x1440 they should fit all 39 columns, but nobody has tried it yet. 2560x1080 hasn't
-been reported yet either. If you play at either, please say how it looks.
+screen. The flea window has been seen fitting all 39 columns at 5120x1440. The trader
+screen did not in 1.1.0 (11 of 39); 1.1.1 fixes that, but nobody has tried the fix at
+32:9 yet. 2560x1080 hasn't been reported yet either. If you play at either, please say
+how it looks.
