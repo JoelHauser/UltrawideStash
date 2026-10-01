@@ -72,6 +72,13 @@ namespace UltrawideStash.Probe
         internal bool Movable;
 
         /// <summary>
+        /// Whether this may be carried along when the obstacle it sits inside slides:
+        /// a plain sibling nothing lays out. The trader's buy panel is a separate
+        /// sibling stacked exactly over the deal column, and must go with it.
+        /// </summary>
+        internal bool CanRide;
+
+        /// <summary>
         /// The drawn pieces inside a movable obstacle -- slots, grids, labels. Used to
         /// check that sliding it does not put a button over something that was clear
         /// of one before.
@@ -98,6 +105,9 @@ namespace UltrawideStash.Probe
 
         /// <summary>How far <see cref="Neighbour"/> slides left.</summary>
         internal float Shift;
+
+        /// <summary>Obstacles sitting inside <see cref="Neighbour"/> that slide with it.</summary>
+        internal List<Obstacle> Riders = new List<Obstacle>();
 
         /// <summary>Columns the panel shows after the plan.</summary>
         internal int Columns;
@@ -181,12 +191,17 @@ namespace UltrawideStash.Probe
         /// <param name="obstacles">Everything drawn that does not overlap the panel today.</param>
         /// <param name="gridColumns">How wide the stash grid is.</param>
         /// <param name="chrome">Panel width the grid never gets: toolbar strip and scrollbar.</param>
+        /// <param name="leftOverhang">
+        /// How far the panel's own drawing reaches past its left edge -- the trader
+        /// screen's filter strip hangs outside it. Kept clear like the panel itself.
+        /// </param>
         internal static LayoutPlan Plan(
             Box canvas,
             Box panel,
             IList<Obstacle> obstacles,
             int gridColumns,
-            float chrome)
+            float chrome,
+            float leftOverhang = 0f)
         {
             var shown = ColumnsIn(panel.Width, chrome);
             var extra = chrome + ScrollSlack;
@@ -234,9 +249,20 @@ namespace UltrawideStash.Probe
                 if (nearest == null || o.Box.XMax > nearest.Box.XMax) nearest = o;
             }
 
+            // What rides along with the nearest: plain siblings drawn inside its box.
+            var riders = new List<Obstacle>();
+
+            if (nearest != null && nearest.Movable)
+            {
+                foreach (var o in blockers)
+                {
+                    if (o != nearest && o.CanRide && Inside(o.Box, nearest.Box)) riders.Add(o);
+                }
+            }
+
             foreach (var o in blockers)
             {
-                if (o == nearest || o.Box.XMax > panel.XMin + 1f) continue;
+                if (o == nearest || riders.Contains(o) || o.Box.XMax > panel.XMin + 1f) continue;
 
                 behind = Math.Max(behind, o.Box.XMax + Gap);
             }
@@ -254,8 +280,9 @@ namespace UltrawideStash.Probe
                 var left = grow - right;
                 var newLeft = panel.XMin - left;
                 var newRight = panel.XMax + right;
+                var reach = newLeft - leftOverhang;
 
-                if (newLeft < behind)
+                if (reach < behind)
                 {
                     why = "no room on the left";
                     continue;
@@ -263,9 +290,9 @@ namespace UltrawideStash.Probe
 
                 var shift = 0f;
 
-                if (left > 0f && nearest != null && newLeft < nearest.Box.XMax + Gap)
+                if (left > 0f && nearest != null && reach < nearest.Box.XMax + Gap)
                 {
-                    shift = nearest.Box.XMax + Gap - newLeft;
+                    shift = nearest.Box.XMax + Gap - reach;
 
                     if (!nearest.Movable)
                     {
@@ -279,7 +306,7 @@ namespace UltrawideStash.Probe
                         continue;
                     }
 
-                    var covered = NewlyCovered(nearest, shift, obstacles);
+                    var covered = NewlyCovered(nearest, shift, obstacles, riders);
 
                     if (covered != null)
                     {
@@ -305,6 +332,7 @@ namespace UltrawideStash.Probe
                 plan.Lift = lift;
                 plan.Neighbour = shift > 0f ? nearest : null;
                 plan.Shift = shift;
+                plan.Riders = shift > 0f ? riders : new List<Obstacle>();
                 plan.Columns = columns;
                 plan.Why = columns == gridColumns
                     ? string.Format("room for all {0} columns.", columns)
@@ -324,6 +352,13 @@ namespace UltrawideStash.Probe
         private static bool Low(Obstacle o, float bottom)
         {
             return o.IsButton && o.Box.YMax + LiftGap - bottom <= MaxLift;
+        }
+
+        /// <summary>Whether <paramref name="inner"/> lies within <paramref name="outer"/>, give or take 2 px.</summary>
+        private static bool Inside(Box inner, Box outer)
+        {
+            return inner.XMin >= outer.XMin - 2f && inner.XMax <= outer.XMax + 2f
+                && inner.YMin >= outer.YMin - 2f && inner.YMax <= outer.YMax + 2f;
         }
 
         /// <summary>Horizontal overlap within the vertical band, edges not counted.</summary>
@@ -361,11 +396,11 @@ namespace UltrawideStash.Probe
         /// over part of it (Next over the empty bottom of the containers column) may
         /// keep doing so; it just may not land on anything new.
         /// </summary>
-        private static Obstacle NewlyCovered(Obstacle n, float shift, IList<Obstacle> obstacles)
+        private static Obstacle NewlyCovered(Obstacle n, float shift, IList<Obstacle> obstacles, List<Obstacle> riders)
         {
             foreach (var o in obstacles)
             {
-                if (o == n || !o.Box.Overlaps(n.Box)) continue;
+                if (o == n || riders.Contains(o) || !o.Box.Overlaps(n.Box)) continue;
 
                 foreach (var inner in n.Inner)
                 {

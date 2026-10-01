@@ -14,6 +14,11 @@ with `GearPanelReserve` at its default the stash filled it. That is their report
 screenshots; their log was not seen. See [Status](#status) for what has and has not been
 checked.
 
+**From 1.1.0 the stash is wide at the traders and on the flea market too** — on the
+trader screen, and in the add-offer window you list items from. Up to 1.0.5 both kept
+the 10-column panel, so a wide stash scrolled sideways at a trader and was cut off when
+listing an item. See [Traders and the flea market](#traders-and-the-flea-market-110).
+
 **On a 16:9 monitor this mod does nothing, and that is deliberate.** 1080p, 1440p and 4K
 all get exactly the same canvas width and none of them have room to spare — see
 [Why there is room to fill](#why-there-is-room-to-fill). On a wider screen it works out
@@ -89,7 +94,7 @@ is for.
 | | Goes to | Does |
 | --- | --- | --- |
 | `UltrawideStash.Server.dll` | `SPT_Runtime/user/mods/UltrawideStash/` | Sets the stash width, and keeps stored items inside it |
-| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Stretches EFT's 16:9 inventory screen to the full width, then widens the stash panel in the menu (never in raid) — on the character screen, the scav loot transfer, receiving mail items and hideout area transfers — measures the character screen's, and writes it down for the server |
+| `UltrawideStash.Probe.dll` | `BepInEx/plugins/` | Stretches EFT's 16:9 inventory screen to the full width, then widens the stash panel in the menu (never in raid) — on the character screen, the scav loot transfer, receiving mail items, hideout area transfers, the trader screen and the flea market's add-offer window — measures the character screen's, and writes it down for the server |
 | `repair-stash.ps1` | `SPT_Runtime/user/mods/UltrawideStash/` | Standalone recovery. Needs only PowerShell — not the mod |
 
 The server half also writes two files into its own folder on first start:
@@ -200,7 +205,8 @@ flat, it goes up — losing an item is not an acceptable price for a tidy number
   when it isn't 620. Below 520 it is raised to 520, or the character doll clips.
 - **`WidenTransferScreens`** (`true`, new in 1.0.3) — also widen the stash panel on the
   scav loot transfer after a raid, on the screen for receiving mail items, and on the
-  hideout screen for putting items into an area.
+  hideout screen for putting items into an area. From 1.1.0 it covers the trader screen
+  and the flea market's add-offer window as well.
 
 ### The other screens that show your stash (1.0.3)
 
@@ -221,9 +227,37 @@ up, by at most a row and a half, and one beside the panel stops it growing. The 
 screen is re-planned whenever a tab change swaps the area's grid or the filter window
 opens.
 
-Traders, prestige and the in-raid transit transfer are left vanilla. Nothing measured on
-any screen but the character screen is written for the server — before 1.0.3, the first
+Prestige and the in-raid transit transfer are left vanilla. Nothing measured on any
+screen but the character screen is written for the server — before 1.0.3, the first
 stash panel opened at a resolution was measured whichever screen it was on.
+
+### Traders and the flea market (1.1.0)
+
+**The trader screen** is laid out the other way round from the transfer screens: it
+already fills the monitor, with the trader's goods on the left, the deal column (Buy /
+Sell, Deal, the price panel) in the middle and your stash at the right edge. There is no
+room on the right, so the stash grows **left**, and the deal column slides left into the
+empty space beside the trader's goods. At 3440x1440 the stash goes from 684 to 1212 px
+(19 columns) and the deal column moves 245 px. The stash's filter strip, which hangs
+just outside the panel's left edge, is kept clear too.
+
+It is laid out when the trader screen opens, before its first frame, so nothing visibly
+moves — not on a trader's first load, not when clicking between traders, not on Buy /
+Sell. When you come back to a trader from another screen, the game puts the stash panel
+back to its own width; the probe notices that before the frame is drawn and lays it out
+again.
+
+**The flea market's add-offer window** draws your stash in a grid of its own and cut a
+wide one off. It is a centred window built by the game's layout system, so the probe
+asks that layout for more room instead of moving things by hand: the stash side gets as
+much more width as the grid needs and the window grows by the same amount, about its
+own centre (1200 → 1770 px at 3440x1440). The price side keeps its size. The game's own
+keep-on-screen check then runs at the new width, so a window you dragged near an edge
+stays on screen. If a screen is too narrow for the whole grid, the window widens as far
+as it can and the rest scrolls.
+
+Both are menu screens and are never widened in raid. `WidenTransferScreens` turns both
+off with the others.
 
 ### Every row is full width
 
@@ -635,7 +669,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5, and played on SPT 4.1.6.
-Clean at 0 warnings; 240 logic tests and 19 database checks pass. The probe carries no
+Clean at 0 warnings; 270 logic tests and 19 database checks pass. The probe carries no
 `Assembly-CSharp` or `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
@@ -661,6 +695,11 @@ Compatibility.
 - **Never in raid** — a screen widened in the menu is put back to vanilla on the first
   inventory open in raid (1.0.0).
 - **The mail transfer screen** — 19 columns, buttons clear (1.0.3).
+- **The trader screen** (1.1.0) — 19 columns (`CHECK ... fits, 4.0 px spare`), the deal
+  column slid 245 px, steady on first loads, trader clicks, Buy / Sell and coming back
+  from the character screen.
+- **The flea market's add-offer window** (1.1.0) — 1200 → 1770 px, 19 columns, on screen
+  when reopened and after being dragged to an edge.
 - **16:9 and 32:9 layouts, simulated** (1.0.4, with UIScale.Reloaded) — by setting
   EFT's UI scale so a 3440x1440 display lays the menu out as a 1920- or 3840-wide
   canvas. At 1920 the panel stays vanilla and the log says why. At 3840 a 39x68 stash
@@ -676,6 +715,10 @@ Compatibility.
 **Not yet verified**, in rough order of risk:
 
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
+- **The trader screen and the add-offer window at 32:9** (1.1.0). Worked out, not run: on
+  a 3840-wide canvas a 39-column stash fits on the trader screen with the deal column
+  slid about 875 of the 990 px it has, and the add-offer window comes to about 3030 px.
+  The trader screen is assumed to fill the canvas at 32:9 as it does at 21:9.
 - **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
   been seen in a live log.
 - **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same

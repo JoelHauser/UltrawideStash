@@ -374,11 +374,13 @@ src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the
   MeasurementFile.cs  writes the measurement into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
   ScreenLayout.cs     transfer-screen planner -- pure, also compiled into the tests
-  ScreenWiden.cs      scav/mail/hideout transfer screens: identify, map, grow, check
+  ScreenWiden.cs      scav/mail/hideout transfer screens and the trader screen: identify,
+                      map, grow, check, and hold the layout (Guard, from LateUpdate)
+  OfferWindowWiden.cs the flea market's add-offer window: asks its layout for more width
   ProbePlugin.cs      BepInPlugin; postfix on SimpleStashPanel.Show, prefix on
                       ItemsPanel.Show, both gated on the game's inRaid flag
 
-tests/UltrawideStash.Server.Tests/    xunit, 226 tests
+tests/UltrawideStash.Server.Tests/    xunit, 270 tests
   StashFitTests.cs              canvas width per aspect, and the conservative ceiling
   RowDriftTests.cs              how the row count moves across restarts, and why it stops
   ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
@@ -804,6 +806,16 @@ now stamped `1.0.5+c3f521f`; 265 logic tests, 19 database checks.
 Anyone with the pre-release zip has the stretch but not the reserve check. The server
 log tells them apart: only the re-release's `Width:` line names the probe config.
 
+### 1.1.0, released 2026-09-30 -- traders and the flea market
+
+The stash is wide on the trader screen and in the flea market's add-offer window. Both
+had kept the 10-column panel since 1.0.0: the trader screen was on `OtherScreens`
+deliberately, and the add-offer window has no stash panel, so nothing ever saw it. A
+minor version rather than 1.0.6 because it is new behaviour on two screens, not a fix.
+See *Traders and the flea add-offer window (1.1.0)*. Tagged `v1.1.0`,
+`UltrawideStash_V1.1.0.zip`. 270 logic tests, 19 database checks. Verified in game at
+3440x1440 only; 32:9 is arithmetic and a planner test.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
@@ -903,11 +915,12 @@ Read off the patched assembly -- every type carrying a `SimpleStashPanel` field:
 | Screen | Panel widened? |
 | --- | --- |
 | `EFT.UI.ItemsPanel` (`InventoryScreen`) -- the character screen | **yes** |
-| `EFT.UI.TraderDealScreen` | no |
+| `EFT.UI.TraderDealScreen` | **yes, from 1.1.0** |
 | `EFT.UI.TransferItemsScreen` | **yes, from 1.0.3** |
 | `EFT.UI.ScavengerInventoryScreen` | **yes, from 1.0.3** |
 | `UI.Hideout.BaseHideoutAreaTransferItemsScreen<,>` | **yes, from 1.0.3** |
 | `EFT.UI.PrestigeTransferItemsState` | no |
+| `EFT.UI.Ragfair.AddOfferWindow` -- no stash panel, its own `GridView` | **yes, from 1.1.0** (`OfferWindowWiden`) |
 
 The three 1.0.3 rows are `ScreenWiden`, not `StashWiden` -- see *The transfer screens*.
 Everything below this table up to that section describes 1.0.2 and earlier.
@@ -1414,3 +1427,131 @@ reserves. 265 logic tests.
 
 Still not run: a physical 21:9 other than 3440x1440, a clean install, and in a live log
 both the server's ignore-old-measurement line and its reserve warning.
+
+
+## Traders and the flea add-offer window (1.1.0)
+
+Asked for 2026-09-30 off a screenshot of Prapor's screen: a 19-wide grid in the 684 px
+panel with a horizontal scrollbar. Then, once that worked, the flea market's add-offer
+window cutting the stash off. Built over six game runs in one evening; each finding
+below came off a log block, not a guess.
+
+### The trader screen's real shape
+
+Read off the live dump (`trader screen, as laid out`, 3440x1440, canvas 2580, centred on
+0). Every child of `TraderDealScreen` is laid out by hand -- no layout groups at this
+level:
+
+```
+Left Person   x -1282..-640   ax 0.00   the trader's goods (showcase)
+TradeControll x  -253..253    ax 0.50   tabs (Buy/Sell), Deal button, border
+Barter Scheme Panel x -253..253, y -465..231   ax 0.50   a SIBLING of TradeControll
+Right Person  x   598..1282   ax 1.00   the stash panel's cap, 684 px
+  SimpleStashPanel / Mask x 598..1272 (674)   / Filter Panel x 562..1282
+```
+
+So the trader screen already fills the canvas (it is not a 16:9 frame like the transfer
+screens, and UIScale.Reloaded has no code for it), the stash is pinned to the right edge,
+and the room is the ~310 px either side of the centred deal column. Routing it through
+`ScreenWiden`/`ScreenLayout.Plan` (new `StashScreen.Trader`) needed three changes to the
+planner, each from a failed run:
+
+- **Riders.** The buy panel is a separate sibling stacked exactly over `TradeControll`,
+  and reads as a button (so not `Movable`). The first build slid `TradeControll` and
+  treated the buy panel as a wall behind it: "no room on the left", 11 columns. Now any
+  `CanRide` obstacle inside the nearest's box (2 px tolerance) slides with it, and is
+  excluded from `behind` and `NewlyCovered`.
+- **Left overhang.** The filter strip (`Filter Panel`) hangs 36-38 px left of the cap.
+  `ScreenLayout.Plan` takes `leftOverhang` and keeps it clear like the panel itself.
+  `LeftOverhang` walks the cap with **`activeSelf` and `enabled`**, not
+  `activeInHierarchy`: the early layout (below) runs while the stash panel is hidden, and
+  an active-only walk found no strip there and found it at the stash's Show -- a 38 px
+  jiggle on every trader's first load. The widest seen per screen kind is kept.
+- **Chrome against the mask.** The grid chain's first pinned node on this screen is a
+  ~1206 px holder sized to the grid, so `chain.Chrome` came out 259 px instead of the 10
+  px scrollbar. `SteadyChrome` = cap width - the panel's first `Mask` (BFS, >= 200 px)
+  width; it needs no grid, so the plan at `Show` equals the plan three frames later. When
+  they differed (48 guessed, 10 measured) every open sized the panel twice and the deal
+  column jumped 38 px per trader click. `Check` reads the viewport off the same mask.
+
+### Laid out before the first frame, and held there
+
+- **A postfix on `TraderDealScreen.Show`** (7 params) runs `ScreenWiden.Begin` at once,
+  with the stash's width from `stashController.Inventory.Stash` (`Inventory` read as a
+  property or field by plain reflection -- `AccessTools` logs a warning on every miss).
+  On a first visit the stash panel is only shown after the assortment loads, so widening
+  from `SimpleStashPanel.Show` alone let the player watch it happen. The stash's own Show
+  re-plans in the same frame. A trader that never shows its grid times out silently.
+- **Something resets `Right Person`** to its own width when the trader screen is shown
+  again (coming back from the character screen), leaving `TradeControll` slid. Not UI
+  Fixes (decompiled), not `SimpleStashPanel`; most likely the screen's open animation --
+  **unconfirmed**. It also explains the cap reading 642 px at `TraderDealScreen.Show` and
+  684 later. `ScreenWiden.Guard`, from the plugin's `LateUpdate` (after animations, before
+  the frame is drawn), compares each applied rect's offsets with what was set and
+  re-arranges at once; it logs `something else moved 'Right Person'` once per open and
+  gives up after 120 re-layouts per open. On the live install that line appears on every
+  return to a trader -- expected, not a fault.
+- **The retry boost was the black strip.** Phase 1's CHECK saw the reset panel overflow
+  by ~524 px and added it to the chrome; the plan fell back to 12 "columns" of that,
+  1296 px, leaving an 84 px dead strip beside a 19-wide grid (the `88.0 px spare` CHECK
+  lines). The retry now re-plans without a boost when the cap is not at its planned width.
+- **Buy / Sell** swaps `_barterSchemePanel` for `_tradingTable` without re-showing the
+  stash; the phase-2 watch signs both by visibility and size only (not children -- they
+  are rebuilt on every item clicked).
+- `re-plan moved things on screen: ...` is logged whenever a re-plan leaves the panel or
+  anything slid somewhere else than it was while showing -- the tool that found the
+  first-load jiggle. Silence there means no visible movement from this code.
+
+### The add-offer window
+
+`EFT.UI.Ragfair.AddOfferWindow` (`Window<DialogWindowContext>`) draws the stash in its
+own `_gridView`, a plain `GridView` -- no `SimpleStashPanel`, so the probe never fired
+there. Read off a one-off diagnostic dump (since removed):
+
+```
+Inner 1200 px, ax 0.5, VerticalLayoutGroup -- the WindowTransform, draggable
+  Contents       HorizontalLayoutGroup
+    Left Part    676   VerticalLayoutGroup
+      StashPart  676   LayoutElement      <- the width that matters
+        Possessions Grid > Scroll Area (Mask) 632 = 676 - 44 > GridView 1198
+    Right Part   524
+```
+
+Everything inside `Inner` is layout-driven, so moving rects would be undone.
+`OfferWindowWiden.Apply` (postfix on the 7-arg `Show`; the stash is `lootItems[0]`) finds
+the mask and the first `LayoutElement` above it **by structure**, records vanilla per
+window instance, restores it, then raises the element's `preferredWidth`/`minWidth` by
+`cols*63+1+4+chrome - 676` (capped to canvas - 24) and widens `Inner` about its pivot.
+The layout does the rest. It then calls the game's own `CorrectPosition` (on
+`UIInputNode`, optional `MarginsRect`), which `Show` had run at the old width -- the
+window's position is saved in PlayerPrefs (`AddOfferWindowPosition`) and a dragged one
+was seen clamped to the edge (`x -480..1290`). A CHECK line 5 frames later.
+
+**Hitch:** the first build ran `Canvas.ForceUpdateCanvases()` before `CorrectPosition`
+(a full-UI layout pass) plus the 50-line dump; the user felt a hitch on opening. Both are
+gone: `Inner` is not layout-driven, so its rect has the new width immediately. **Whether
+that cured the hitch was not confirmed before release.** `ScreenWiden.Arrange` still
+forces a canvas update on every arrange, including each Guard re-layout.
+
+### Verified, and not
+
+- **3440x1440, in game, 2026-09-30:** trader -- 19 columns, `fits, 4.0 px spare`, steady
+  on first loads, trader clicks, Buy / Sell and returning from the character screen;
+  mail re-checked with the shared code (684 -> 1250, fits). Add offer -- 1200 -> 1770,
+  19 columns, fits, reopen stays 1770, dragged window kept on screen.
+- **5120x1440: not run.** `TheTraderScreenAt32By9GetsAllThirtyNineColumns` lays the
+  3440 layout out by its anchors on a 3840 canvas (deal column slides ~875 of ~993 px);
+  the add-offer window comes to ~3030 px. Both assume the screens keep their 21:9 shape.
+  The owed run: a 32:9 player opening a trader and Add offer, sending
+  `===== trader: stash panel =====` and `flea add offer window: ... CHECK`.
+- Scav and hideout transfers now use `SteadyChrome` too; neither has been re-run.
+
+### Traps from this one
+
+- **`ilspycmd` is at `~/.dotnet/tools/ilspycmd`** and the patched assembly survives in an
+  older session scratchpad (`.../45187b93-.../scratchpad/asm/Assembly-CSharp.dll`,
+  16,233,472 bytes). `-t <type>` for one type; `-p -o` on a plugin DLL to read another
+  mod's patches (how UI Fixes was cleared).
+- **A Bash heredoc with C# in it can fail to parse** (an unmatched-quote error at EOF)
+  even with a quoted delimiter. Write the edit script to a file and run it.
+- **Do not copy the probe DLL while EFT is running** -- check `tasklist` first.

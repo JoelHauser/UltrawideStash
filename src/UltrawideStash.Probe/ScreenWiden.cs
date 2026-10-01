@@ -28,13 +28,24 @@ namespace UltrawideStash.Probe
         /// </summary>
         HideoutTransfer,
 
-        /// <summary>A trader, prestige, or the in-raid transit transfer.</summary>
+        /// <summary>
+        /// <c>EFT.UI.TraderDealScreen</c>: buying from and selling to a trader. The stash
+        /// sits at the right edge, the deal panel in the middle, the showcase on the left.
+        /// </summary>
+        Trader,
+
+        /// <summary>Prestige, or the in-raid transit transfer.</summary>
         Other,
     }
 
     /// <summary>
-    /// Widens the stash panel on the scav loot transfer, the mail transfer and the
-    /// hideout area transfer screens.
+    /// Widens the stash panel on the scav loot transfer, the mail transfer, the
+    /// hideout area transfer and the trader screens.
+    ///
+    /// The trader screen (added in 1.1.0) is laid out the other way round: it
+    /// already fills the canvas, with the stash at the right edge, so there is no
+    /// room on the right. The panel grows left into the gap beside the deal panel,
+    /// and the deal panel may slide left into the gap beside the showcase.
     ///
     /// ## Why these two needed their own code
     ///
@@ -78,6 +89,9 @@ namespace UltrawideStash.Probe
 
         private const string InventoryScreenName = "EFT.UI.InventoryScreen";
 
+        /// <summary>The trader screen, matched through the base chain like the ones below.</summary>
+        private const string TraderScreenName = "TraderDealScreen";
+
         /// <summary>
         /// Screens that draw the stash and are left alone: there is no free width
         /// beside the stash on them, or they are in raid. Matched by simple type name
@@ -85,7 +99,6 @@ namespace UltrawideStash.Probe
         /// </summary>
         private static readonly HashSet<string> OtherScreens = new HashSet<string>(StringComparer.Ordinal)
         {
-            "TraderDealScreen",
             "PrestigeTransferItemsState",
             "TransferItemsInRaidScreen",
         };
@@ -142,6 +155,12 @@ namespace UltrawideStash.Probe
                         {
                             screen = c;
                             return StashScreen.HideoutTransfer;
+                        }
+
+                        if (SimpleName(t) == TraderScreenName)
+                        {
+                            screen = c;
+                            return StashScreen.Trader;
                         }
 
                         if (OtherScreens.Contains(SimpleName(t)))
@@ -215,6 +234,8 @@ namespace UltrawideStash.Probe
             _retried = false;
             _extraBoost = 0f;
             _signature = 0;
+            _rewriteSaid = false;
+            _rewrites = 0;
 
             if (!Enabled)
             {
@@ -230,7 +251,8 @@ namespace UltrawideStash.Probe
 
             try
             {
-                Arrange(panel, screen, gridColumns, StashMeasure.Chrome);
+                Arrange(panel, screen, gridColumns, SteadyChrome(panel, StashMeasure.Chrome));
+                SayMoved(log);
             }
             catch (Exception e)
             {
@@ -266,13 +288,20 @@ namespace UltrawideStash.Probe
                     return;
                 }
 
-                var gridView = StashMeasure.StashGridView(_panel);
+                var gridView = GridViewOf(_panel, _screen);
 
                 if (gridView == null)
                 {
                     if (++_frames > 120)
                     {
-                        log(Label(_kind) + ": gave up waiting for the stash grid after 120 frames.");
+                        // The trader screen is laid out from its own Show, before the
+                        // trader's goods have loaded; the stash grid comes with them,
+                        // and its own Show begins again. Nothing went wrong.
+                        if (_kind != StashScreen.Trader)
+                        {
+                            log(Label(_kind) + ": gave up waiting for the stash grid after 120 frames.");
+                        }
+
                         _panel = null;
                     }
 
@@ -288,21 +317,33 @@ namespace UltrawideStash.Probe
                     var grid = GameTypes.GridViewGrid.GetValue(gridView);
                     var columns = (int)GameTypes.GridWidth.GetValue(grid, null);
 
-                    var gridRect = gridView.transform as RectTransform;
-                    var chain = StashMeasure.ChainOf(gridRect, gridView.GetComponentInParent<Canvas>());
-
                     // Measured on the laid-out screen, before the restore inside
                     // Arrange changes the panel. Bounded like LearnChrome: an absurd
                     // number keeps the known one.
-                    var chrome = chain.Chrome >= 8f && chain.Chrome <= 200f ? chain.Chrome : StashMeasure.Chrome;
+                    var measured = ChromeOf(gridView, _panel);
+                    var fallback = measured >= 8f && measured <= 200f ? measured : StashMeasure.Chrome;
+                    var chrome = SteadyChrome(_panel, fallback);
 
                     _arranged = Arrange(_panel, _screen, columns, chrome + _extraBoost);
+                    SayMoved(log);
                     _signature = Signature(_screen);
                     _phase = 1;
                     return;
                 }
 
                 var said = Check(gridView);
+
+                // A panel something else has resized since it was planned says nothing
+                // about the chrome; the guard puts it back. Adding its overflow to the
+                // chrome is what once left a 19-column grid in a 1296 px panel with an
+                // 84 px black strip beside it.
+                var resized = _guardedCap != null && Math.Abs(_guardedCap.rect.width - _planned) > 2f;
+
+                if (said.Overflow > 0f && resized)
+                {
+                    _phase = 0;
+                    return;
+                }
 
                 if (said.Overflow > 0f && !_retried)
                 {
@@ -314,9 +355,7 @@ namespace UltrawideStash.Probe
                     return;
                 }
 
-                var key = _kind + "@" + Screen.width + "x" + Screen.height;
-
-                if (Reported.Add(key))
+                if (Reported.Add(ReportKey()))
                 {
                     log(_arranged + said.Text);
                 }
@@ -326,9 +365,10 @@ namespace UltrawideStash.Probe
                 }
 
                 // The hideout screen swaps its area grid on a tab change without
-                // showing the stash again, and opens a filter window beside it. Keep
-                // an eye on both while the screen is open.
-                if (_kind == StashScreen.HideoutTransfer)
+                // showing the stash again, and opens a filter window beside it. The
+                // trader screen swaps its deal panel for the sell table the same way
+                // on Buy / Sell. Keep an eye on both while the screen is open.
+                if (_kind == StashScreen.HideoutTransfer || _kind == StashScreen.Trader)
                 {
                     _phase = 2;
                     return;
@@ -344,6 +384,76 @@ namespace UltrawideStash.Probe
         }
 
         private const int SettleFrames = 3;
+
+        /// <summary>
+        /// The stash panel's width less its clipping mask's: the width the grid never
+        /// gets. It needs no grid, so it is the same number at <c>Show</c> as three
+        /// frames later, and the first plan is the final one. When the two differed
+        /// (48 px guessed, 10 px measured on the trader screen) the panel was sized
+        /// twice per open and the deal column jumped 38 px on every trader click.
+        /// </summary>
+        private static float SteadyChrome(MonoBehaviour panel, float fallback)
+        {
+            var cap = CapOf(panel);
+            var mask = MaskOf(panel);
+
+            if (cap == null || mask == null) return fallback;
+
+            var chrome = cap.rect.width - mask.rect.width;
+
+            return chrome >= 8f && chrome <= 200f ? chrome : fallback;
+        }
+
+        /// <summary>
+        /// The mask the stash grid scrolls inside: the first one under the panel,
+        /// nearest first, wider than a few cells.
+        /// </summary>
+        private static RectTransform MaskOf(MonoBehaviour panel)
+        {
+            var root = panel != null ? panel.transform as RectTransform : null;
+
+            if (root == null) return null;
+
+            var level = new List<RectTransform> { root };
+
+            for (var depth = 0; depth < 5 && level.Count > 0; depth++)
+            {
+                var next = new List<RectTransform>();
+
+                foreach (var node in level)
+                {
+                    if (node != root && Clips(node) && node.rect.width >= 200f) return node;
+
+                    for (var i = 0; i < node.childCount; i++)
+                    {
+                        var child = node.GetChild(i) as RectTransform;
+
+                        if (child != null) next.Add(child);
+                    }
+                }
+
+                level = next;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The stash panel's width less the viewport the grid is drawn into. Taken
+        /// against the panel <see cref="Arrange"/> resizes, not the first pinned node
+        /// above the grid: on the trader screen that is a holder sized to the grid
+        /// itself (1206 px round a 1198 px grid), which made the chrome 259 px rather
+        /// than the scrollbar's 10.
+        /// </summary>
+        private static float ChromeOf(Component gridView, MonoBehaviour panel)
+        {
+            var chain = StashMeasure.ChainOf(gridView.transform as RectTransform, gridView.GetComponentInParent<Canvas>());
+            var cap = CapOf(panel);
+
+            if (cap == null || chain.Viewport <= 0f) return chain.Chrome;
+
+            return cap.rect.width - chain.Viewport;
+        }
 
         /// <summary>Frames between looks at an open hideout screen. A field read and a few rects.</summary>
         private const int WatchFrames = 15;
@@ -370,7 +480,9 @@ namespace UltrawideStash.Probe
 
             if (now == _signature) return;
 
-            log(Label(_kind) + ": the area grid or filter window changed, planning again.");
+            log(Label(_kind) + (_kind == StashScreen.Trader
+                ? ": the deal panel changed (Buy / Sell), planning again."
+                : ": the area grid or filter window changed, planning again."));
 
             _signature = now;
             _retried = false;
@@ -380,24 +492,37 @@ namespace UltrawideStash.Probe
         private static readonly Dictionary<Type, FieldInfo[]> WatchedFields = new Dictionary<Type, FieldInfo[]>();
 
         /// <summary>
-        /// A number that changes when the hideout screen's layout does: the grids view
-        /// under <c>_parent</c> (replaced on every tab change) and the filter window
-        /// <c>_handoverItemsWindow</c>, by identity, visibility and size. Zero for any
-        /// other screen, or when the fields are not there.
+        /// A number that changes when a watched screen's layout does. Hideout: the
+        /// grids view under <c>_parent</c> (replaced on every tab change) and the filter
+        /// window <c>_handoverItemsWindow</c>, by identity, visibility and size of each
+        /// child. Trader: the buy panel <c>_barterSchemePanel</c> and the sell table
+        /// <c>_tradingTable</c>, by visibility and size only -- their children are
+        /// rebuilt on every item clicked, and that is no reason to plan again. Zero for
+        /// any other screen, or when the fields are not there.
         /// </summary>
         private static int Signature(Component screen)
         {
-            if (_kind != StashScreen.HideoutTransfer || screen == null) return 0;
+            if (screen == null) return 0;
+
+            var trader = _kind == StashScreen.Trader;
+
+            if (_kind != StashScreen.HideoutTransfer && !trader) return 0;
 
             var type = screen.GetType();
 
             if (!WatchedFields.TryGetValue(type, out var fields))
             {
-                fields = new[]
-                {
-                    AccessTools.Field(type, "_parent"),
-                    AccessTools.Field(type, "_handoverItemsWindow"),
-                };
+                fields = trader
+                    ? new[]
+                    {
+                        AccessTools.Field(type, "_barterSchemePanel"),
+                        AccessTools.Field(type, "_tradingTable"),
+                    }
+                    : new[]
+                    {
+                        AccessTools.Field(type, "_parent"),
+                        AccessTools.Field(type, "_handoverItemsWindow"),
+                    };
                 WatchedFields[type] = fields;
             }
 
@@ -420,6 +545,8 @@ namespace UltrawideStash.Probe
                     hash = hash * 31 + (value.gameObject.activeInHierarchy ? 1 : 2);
                     hash = hash * 31 + Size(node);
 
+                    if (trader) continue;
+
                     for (var i = 0; i < node.childCount; i++)
                     {
                         var child = node.GetChild(i);
@@ -432,6 +559,34 @@ namespace UltrawideStash.Probe
 
                 return hash;
             }
+        }
+
+        private static readonly Dictionary<Type, FieldInfo> StashGridFields = new Dictionary<Type, FieldInfo>();
+
+        /// <summary>
+        /// The stash's GridView: the tallest under the panel, as everywhere else. The
+        /// trader screen shows its stash grid itself (<c>_stashGridView</c>, right after
+        /// the panel), so if it is not under the panel it is read off the screen.
+        /// </summary>
+        private static Component GridViewOf(MonoBehaviour panel, Component screen)
+        {
+            var view = StashMeasure.StashGridView(panel);
+
+            if (view != null || _kind != StashScreen.Trader || screen == null) return view;
+
+            var type = screen.GetType();
+
+            if (!StashGridFields.TryGetValue(type, out var field))
+            {
+                field = AccessTools.Field(type, "_stashGridView");
+                StashGridFields[type] = field;
+            }
+
+            var fromScreen = field != null ? field.GetValue(screen) as Component : null;
+
+            if (fromScreen == null || !fromScreen.gameObject.activeInHierarchy) return null;
+
+            return GameTypes.GridViewGrid.GetValue(fromScreen) != null ? fromScreen : null;
         }
 
         private static int Size(Transform t)
@@ -457,6 +612,8 @@ namespace UltrawideStash.Probe
 
             sb.AppendLine(string.Format("===== {0}: stash panel =====", Label(_kind)));
 
+            Applied.Clear();
+
             var cap = CapOf(panel);
 
             if (cap == null)
@@ -465,9 +622,10 @@ namespace UltrawideStash.Probe
                 return sb.ToString();
             }
 
-            Restore(cap);
+            var canvasRt = RootCanvas(panel) ?? (screen != null ? RootCanvas(screen) : null);
+            var before = canvasRt != null ? Placed(cap, canvasRt) : null;
 
-            var canvasRt = RootCanvas(panel);
+            Restore(cap);
 
             if (canvasRt == null || screen == null)
             {
@@ -488,6 +646,15 @@ namespace UltrawideStash.Probe
                 Screen.width, Screen.height, canvas.Width, canvas.Height, cap.name, panelBox, panelBox.Width,
                 gridColumns, ScreenLayout.WidthOfColumns(gridColumns) + chrome + ScreenLayout.ScrollSlack, chrome,
                 ScreenLayout.ScrollSlack));
+
+            // The trader screen's layout has never been read off a live game. Say what
+            // it is, once per resolution, so the first log answers any question the
+            // plan below leaves open.
+            if (_kind == StashScreen.Trader && !Reported.Contains(ReportKey()))
+            {
+                sb.AppendLine("trader screen, as laid out (canvas units, y up):");
+                AppendTree(sb, screen.transform as RectTransform, cap, canvasRt, 0);
+            }
 
             if (panelBox.Width < 300f || panelBox.Width > canvas.Width * 0.6f)
             {
@@ -535,7 +702,15 @@ namespace UltrawideStash.Probe
                     o.Movable ? " | may slide" : string.Empty));
             }
 
-            var plan = ScreenLayout.Plan(canvas, panelBox, obstacles, gridColumns, chrome);
+            var overhang = LeftOverhang(cap, canvasRt, panelBox);
+
+            if (overhang > 0f)
+            {
+                sb.AppendLine(string.Format(
+                    "the panel draws {0:0} px past its own left edge (a toolbar strip); kept clear too", overhang));
+            }
+
+            var plan = ScreenLayout.Plan(canvas, panelBox, obstacles, gridColumns, chrome, overhang);
 
             sb.AppendLine("plan: " + plan.Why);
 
@@ -545,7 +720,16 @@ namespace UltrawideStash.Probe
 
             Remember(cap, cap);
 
-            if (neighbour != null) Remember(cap, neighbour);
+            var slid = new List<RectTransform>();
+
+            if (neighbour != null)
+            {
+                slid.Add(neighbour);
+
+                foreach (var r in plan.Riders) slid.Add(Refs[r]);
+            }
+
+            foreach (var rt in slid) Remember(cap, rt);
 
             var parentScale = ScaleOf(cap.parent, canvasRt);
 
@@ -557,13 +741,13 @@ namespace UltrawideStash.Probe
                 min.y + plan.Lift / parentScale.y);
             cap.offsetMax = new Vector2(max.x + (plan.Right - panelBox.XMax) / parentScale.x, max.y);
 
-            if (neighbour != null)
+            foreach (var rt in slid)
             {
-                var scale = ScaleOf(neighbour.parent, canvasRt).x;
+                var scale = ScaleOf(rt.parent, canvasRt).x;
                 var dx = plan.Shift / scale;
 
-                neighbour.offsetMin = new Vector2(neighbour.offsetMin.x - dx, neighbour.offsetMin.y);
-                neighbour.offsetMax = new Vector2(neighbour.offsetMax.x - dx, neighbour.offsetMax.y);
+                rt.offsetMin = new Vector2(rt.offsetMin.x - dx, rt.offsetMin.y);
+                rt.offsetMax = new Vector2(rt.offsetMax.x - dx, rt.offsetMax.y);
             }
 
             // Anchors, pivots or a driver the checks above missed would put the panel
@@ -580,15 +764,83 @@ namespace UltrawideStash.Probe
                 return sb.ToString();
             }
 
+            _moved = before != null ? MovedOnScreen(before, Placed(cap, canvasRt)) : null;
+
+            // What the guard holds the screen to until the next plan.
+            Applied.Add(new Saved { Rect = cap, OffsetMin = cap.offsetMin, OffsetMax = cap.offsetMax });
+
+            foreach (var rt in slid) Applied.Add(new Saved { Rect = rt, OffsetMin = rt.offsetMin, OffsetMax = rt.offsetMax });
+
+            _guarded = panel;
+            _guardedScreen = screen;
+            _guardedColumns = gridColumns;
+            _guardedChrome = chrome;
+            _guardedCap = cap;
+            _planned = after.Width;
+
             sb.AppendLine(string.Format(
                 "widened: stash panel {0:0} -> {1:0} px ({2} columns){3}{4}",
                 panelBox.Width,
                 after.Width,
                 plan.Columns,
                 plan.Lift > 0f ? string.Format(", bottom edge up {0:0} px to clear the buttons", plan.Lift) : string.Empty,
-                neighbour != null ? string.Format(", '{0}' slid {1:0} px left", neighbour.name, plan.Shift) : string.Empty));
+                neighbour != null
+                    ? string.Format(", '{0}' slid {1:0} px left{2}", neighbour.name, plan.Shift,
+                        plan.Riders.Count > 0
+                            ? " with " + string.Join(", ", plan.Riders.ConvertAll(r => "'" + Refs[r].name + "'").ToArray())
+                            : string.Empty)
+                    : string.Empty));
 
             return sb.ToString();
+        }
+
+        private static string ReportKey()
+        {
+            return _kind + "@" + Screen.width + "x" + Screen.height;
+        }
+
+        /// <summary>
+        /// The screen's active nodes, four levels down, skipping slivers narrower than
+        /// 40 px. Diagnostic only.
+        /// </summary>
+        private static void AppendTree(StringBuilder sb, RectTransform node, RectTransform cap, RectTransform canvasRt, int depth, int maxDepth = 4)
+        {
+            if (node == null || depth > maxDepth) return;
+
+            for (var i = 0; i < node.childCount; i++)
+            {
+                var child = node.GetChild(i) as RectTransform;
+
+                if (child == null || !child.gameObject.activeInHierarchy) continue;
+
+                var box = Measure(child, canvasRt);
+
+                if (box.Width < 40f && child != cap && !cap.IsChildOf(child)) continue;
+
+                var names = new List<string>();
+
+                foreach (var c in child.GetComponents<Component>())
+                {
+                    if (c != null && !(c is Transform)) names.Add(c.GetType().Name);
+                }
+
+                sb.AppendLine(string.Format(
+                    "  {0}{1}{2} | {3} | ax {4:0.00}-{5:0.00}{6} | {7}",
+                    new string(' ', depth * 2),
+                    child.name,
+                    child == cap ? "  <-- the stash panel" : string.Empty,
+                    box,
+                    child.anchorMin.x,
+                    child.anchorMax.x,
+                    LayoutDriver(child) != null ? " | driven" : string.Empty,
+                    string.Join(",", names.ToArray())));
+
+                // Nothing inside a mask or a grid is laid out; it is scrolled content.
+                if (!Clips(child) && child.GetComponent(GameTypes.GridView) == null)
+                {
+                    AppendTree(sb, child, cap, canvasRt, depth + 1, maxDepth);
+                }
+            }
         }
 
         /// <summary>
@@ -637,11 +889,97 @@ namespace UltrawideStash.Probe
                     Box = box,
                     IsButton = IsButton(child),
                     Movable = !IsButton(child) && cap.IsChildOf(child.parent) && LayoutDriver(child) == null,
+                    CanRide = cap.IsChildOf(child.parent) && LayoutDriver(child) == null,
                 };
 
                 into.Add(obstacle);
                 Refs[obstacle] = child;
             }
+        }
+
+        /// <summary>
+        /// How far anything the stash panel draws reaches left of the panel's own
+        /// rect. The trader screen's filter strip hangs about 36 px outside it. What
+        /// sits inside a mask, or inside a grid, is scrolled content and is skipped;
+        /// more than 150 px is not a strip and is ignored.
+        ///
+        /// Read whether or not the panel is showing, and the widest ever seen per
+        /// screen is kept. The trader screen is laid out from its own Show, while the
+        /// stash panel is still hidden; reading only what was drawn found no strip
+        /// there, found it when the stash appeared, and slid the deal column 38 px
+        /// more on every trader's first load.
+        /// </summary>
+        private static float LeftOverhang(RectTransform cap, RectTransform canvasRt, Box panel)
+        {
+            var left = panel.XMin;
+
+            OverhangWalk(cap, canvasRt, ref left, 0);
+
+            var overhang = panel.XMin - left;
+
+            overhang = overhang > 1f && overhang <= 150f ? overhang : 0f;
+
+            float seen;
+
+            if (OverhangSeen.TryGetValue(_kind, out seen) && seen > overhang) return seen;
+
+            OverhangSeen[_kind] = overhang;
+
+            return overhang;
+        }
+
+        private static readonly Dictionary<StashScreen, float> OverhangSeen = new Dictionary<StashScreen, float>();
+
+        private static void OverhangWalk(RectTransform node, RectTransform canvasRt, ref float left, int depth)
+        {
+            if (depth > 6) return;
+
+            for (var i = 0; i < node.childCount; i++)
+            {
+                var child = node.GetChild(i) as RectTransform;
+
+                // activeSelf, not activeInHierarchy: the panel itself may be hidden.
+                if (child == null || !child.gameObject.activeSelf) continue;
+                if (child.GetComponent(GameTypes.GridView) != null) continue;
+
+                if (DrawsItself(child))
+                {
+                    var box = Measure(child, canvasRt);
+
+                    if (box.Width >= 1f && box.Height >= 1f) left = Math.Min(left, box.XMin);
+                }
+
+                if (!Clips(child)) OverhangWalk(child, canvasRt, ref left, depth + 1);
+            }
+        }
+
+        /// <summary>A mask: whatever is under it is drawn only inside it.</summary>
+        private static bool Clips(RectTransform node)
+        {
+            foreach (var b in node.GetComponents<Behaviour>())
+            {
+                if (b == null || !b.enabled) continue;
+
+                var name = b.GetType().Name;
+
+                if (name == "Mask" || name == "RectMask2D") return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// An enabled graphic on the node itself, not its children -- enabled, not
+        /// necessarily drawn yet, for the same reason as the walk above.
+        /// </summary>
+        private static bool DrawsItself(RectTransform node)
+        {
+            foreach (var b in node.GetComponents<Behaviour>())
+            {
+                if (b != null && b.enabled && IsA(b.GetType(), GraphicTypeName)) return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -670,6 +1008,155 @@ namespace UltrawideStash.Probe
             return boxes.ToArray();
         }
 
+        // ---- holding the layout ----------------------------------------------------
+
+        /// <summary>The offsets last applied: the panel and everything slid for it.</summary>
+        private static readonly List<Saved> Applied = new List<Saved>();
+
+        private static MonoBehaviour _guarded;
+
+        private static Component _guardedScreen;
+
+        private static int _guardedColumns;
+
+        private static float _guardedChrome;
+
+        private static RectTransform _guardedCap;
+
+        /// <summary>The panel's planned width, in its own units.</summary>
+        private static float _planned;
+
+        private static bool _rewriteSaid;
+
+        /// <summary>Re-layouts the guard has done this open; see <see cref="MaxRewrites"/>.</summary>
+        private static int _rewrites;
+
+        /// <summary>
+        /// Something rewriting the layout every frame would be fought every frame. Two
+        /// seconds of that is enough to say so and stop.
+        /// </summary>
+        private const int MaxRewrites = 120;
+
+        /// <summary>
+        /// From the plugin's LateUpdate: after the game's Update, its coroutines and its
+        /// animations, before the frame is drawn. If anything has put back what the
+        /// last plan set -- on the trader screen the stash panel ('Right Person') is
+        /// returned to its own width when the screen is shown again -- plan again now,
+        /// so the frame is drawn as planned. Four float compares per moved rect while a
+        /// widened screen is showing; nothing otherwise.
+        /// </summary>
+        internal static void Guard(Action<string> log)
+        {
+            if (Applied.Count == 0) return;
+
+            if (!_guarded || _guardedCap == null)
+            {
+                Applied.Clear();
+                return;
+            }
+
+            if (!_guardedCap.gameObject.activeInHierarchy) return;
+
+            string changed = null;
+
+            foreach (var a in Applied)
+            {
+                if (!a.Rect) continue;
+
+                if ((a.Rect.offsetMin - a.OffsetMin).sqrMagnitude > 0.25f || (a.Rect.offsetMax - a.OffsetMax).sqrMagnitude > 0.25f)
+                {
+                    changed = a.Rect.name;
+                    break;
+                }
+            }
+
+            if (changed == null) return;
+
+            if (++_rewrites > MaxRewrites)
+            {
+                Applied.Clear();
+                log(string.Format(
+                    "{0}: '{1}' keeps being moved back by something else; stopped holding the layout for this open.",
+                    Label(_kind), changed));
+                return;
+            }
+
+            try
+            {
+                Arrange(_guarded, _guardedScreen, _guardedColumns, _guardedChrome);
+                _moved = null;
+
+                if (!_rewriteSaid)
+                {
+                    _rewriteSaid = true;
+                    log(string.Format(
+                        "{0}: something else moved '{1}' after it was laid out; laid out again before the frame was drawn.",
+                        Label(_kind), changed));
+                }
+            }
+            catch (Exception e)
+            {
+                Applied.Clear();
+                log(Label(_kind) + ": could not hold the layout -- " + e.Message);
+            }
+        }
+
+        // ---- seeing a re-plan move things --------------------------------------------
+
+        /// <summary>
+        /// Set by <see cref="Arrange"/> when a re-plan left something visibly
+        /// somewhere else than it was: a jiggle the player can see. Logged by the
+        /// caller, which has the log.
+        /// </summary>
+        private static string _moved;
+
+        /// <summary>
+        /// Where the panel and everything moved for it sit now, while the screen is
+        /// showing. Null when it is not showing or nothing has been moved yet.
+        /// </summary>
+        private static Dictionary<RectTransform, Box> Placed(RectTransform cap, RectTransform canvasRt)
+        {
+            if (!cap.gameObject.activeInHierarchy || !Touched.TryGetValue(cap, out var list)) return null;
+
+            var placed = new Dictionary<RectTransform, Box>();
+
+            foreach (var saved in list)
+            {
+                if (saved.Rect && saved.Rect.gameObject.activeInHierarchy) placed[saved.Rect] = Measure(saved.Rect, canvasRt);
+            }
+
+            return placed;
+        }
+
+        private static string MovedOnScreen(Dictionary<RectTransform, Box> before, Dictionary<RectTransform, Box> after)
+        {
+            if (after == null) return null;
+
+            var moved = new List<string>();
+
+            foreach (var pair in before)
+            {
+                if (!after.TryGetValue(pair.Key, out var now)) continue;
+
+                var was = pair.Value;
+
+                if (Math.Abs(was.XMin - now.XMin) > 1f || Math.Abs(was.XMax - now.XMax) > 1f)
+                {
+                    moved.Add(string.Format("'{0}' x {1:0}..{2:0} -> {3:0}..{4:0}", pair.Key.name, was.XMin, was.XMax, now.XMin, now.XMax));
+                }
+            }
+
+            return moved.Count == 0 ? null : "re-plan moved things on screen: " + string.Join("; ", moved.ToArray());
+        }
+
+        private static void SayMoved(Action<string> log)
+        {
+            if (_moved == null) return;
+
+            log(Label(_kind) + ": " + _moved);
+            _moved = null;
+        }
+
         // ---- the check -------------------------------------------------------------
 
         private struct Verdict
@@ -689,7 +1176,8 @@ namespace UltrawideStash.Probe
             var gridRect = gridView.transform as RectTransform;
             var chain = StashMeasure.ChainOf(gridRect, gridView.GetComponentInParent<Canvas>());
 
-            var viewport = chain.Usable - chain.Chrome;
+            var mask = _panel ? MaskOf(_panel) : null;
+            var viewport = mask != null ? mask.rect.width : chain.Usable - chain.Chrome;
             var drawn = gridRect != null ? gridRect.rect.width : 0f;
             var spare = viewport - drawn;
 
@@ -702,7 +1190,7 @@ namespace UltrawideStash.Probe
             sb.AppendLine(line);
 
             var canvasRt = RootCanvas(gridView);
-            var cap = chain.Cap;
+            var cap = _panel ? CapOf(_panel) : chain.Cap;
             var buttons = new StringBuilder();
 
             if (cap != null && canvasRt != null)
@@ -856,6 +1344,7 @@ namespace UltrawideStash.Probe
                 case StashScreen.ScavTransfer: return "scav loot transfer";
                 case StashScreen.MailTransfer: return "mail items transfer";
                 case StashScreen.HideoutTransfer: return "hideout area transfer";
+                case StashScreen.Trader: return "trader";
                 default: return kind.ToString();
             }
         }

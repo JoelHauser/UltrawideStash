@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -36,7 +37,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.0.5";
+        public const string PluginVersion = "1.1.0";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -107,8 +108,9 @@ namespace UltrawideStash.Probe
                 true,
                 "Also widen the stash panel on the scav loot transfer after a raid, on the "
                 + "screen for receiving items from mail, and on the hideout screen for putting "
-                + "items into an area. It grows into the empty space beside the screen and "
-                + "stays clear of the buttons along the bottom.");
+                + "items into an area, on the trader screen, and in the flea market's add-offer "
+                + "window. It grows into the empty space "
+                + "beside the screen and stays clear of the buttons along the bottom.");
 
             if (_widen.Value) StashMeasure.Widen = _reserve.Value;
 
@@ -144,6 +146,9 @@ namespace UltrawideStash.Probe
                 Say("probe could not patch SimpleStashPanel.Show -- " + e.Message);
             }
 
+            PatchTraderScreen();
+            PatchAddOfferWindow();
+
             // Separate from the patch above so that losing it costs only the no-crate
             // raid case, not the whole plugin.
             if (GameTypes.ItemsPanelShow == null || GameTypes.ItemsPanelShowInRaid < 0)
@@ -164,6 +169,157 @@ namespace UltrawideStash.Probe
             {
                 Say("probe could not patch ItemsPanel.Show -- " + e.Message);
             }
+        }
+
+        /// <summary>
+        /// Lay the trader screen out as it opens, before its first frame.
+        ///
+        /// The stash panel on it is only shown once the trader's goods have loaded,
+        /// which on a first visit is after the screen is already up; widening from
+        /// that Show alone let the player watch the stash grow and the deal column
+        /// slide. Losing this patch costs only that; the stash panel's own Show still
+        /// widens it.
+        /// </summary>
+        private void PatchTraderScreen()
+        {
+            try
+            {
+                var type = AccessTools.TypeByName("EFT.UI.TraderDealScreen");
+                MethodInfo show = null;
+
+                if (type != null)
+                {
+                    foreach (var m in AccessTools.GetDeclaredMethods(type))
+                    {
+                        if (m.Name == "Show" && m.GetParameters().Length == 7) show = m;
+                    }
+                }
+
+                _traderStashPanel = type != null ? AccessTools.Field(type, "_stashPanel") : null;
+
+                if (show == null || _traderStashPanel == null)
+                {
+                    Say("TraderDealScreen.Show not found -- the trader screen widens when its stash appears.");
+                    return;
+                }
+
+                new Harmony(PluginGuid).Patch(
+                    show,
+                    postfix: new HarmonyMethod(
+                        AccessTools.Method(typeof(ProbePlugin), nameof(AfterTraderShow))));
+            }
+            catch (Exception e)
+            {
+                Say("probe could not patch TraderDealScreen.Show -- " + e.Message);
+            }
+        }
+
+        private static FieldInfo _traderStashPanel;
+
+        /// <summary>
+        /// The flea market's add-offer window draws the stash in a grid of its own and
+        /// cut a wide one off. Widened as it opens (<see cref="OfferWindowWiden"/>),
+        /// checked a few frames later.
+        /// </summary>
+        private void PatchAddOfferWindow()
+        {
+            try
+            {
+                var type = AccessTools.TypeByName("EFT.UI.Ragfair.AddOfferWindow");
+                MethodInfo show = null;
+
+                if (type != null)
+                {
+                    foreach (var m in AccessTools.GetDeclaredMethods(type))
+                    {
+                        if (m.Name == "Show" && m.GetParameters().Length == 7) show = m;
+                    }
+                }
+
+                if (show == null) return;
+
+                new Harmony(PluginGuid).Patch(
+                    show,
+                    postfix: new HarmonyMethod(
+                        AccessTools.Method(typeof(ProbePlugin), nameof(AfterAddOfferShow))));
+            }
+            catch (Exception e)
+            {
+                Say("probe could not patch AddOfferWindow.Show -- " + e.Message);
+            }
+        }
+
+        private static MonoBehaviour _offerWindow;
+
+        private static int _offerFrames;
+
+        /// <summary>
+        /// <c>AddOfferWindow.Show(inventoryController, lootItems, ...)</c>: the stash is
+        /// <c>lootItems[0]</c>, and its first grid is the one drawn.
+        /// </summary>
+        private static void AfterAddOfferShow(MonoBehaviour __instance, object[] __args)
+        {
+            try
+            {
+                var items = __args != null && __args.Length > 1 ? __args[1] as Array : null;
+                var stash = items != null && items.Length > 0 ? items.GetValue(0) : null;
+                var said = OfferWindowWiden.Apply(__instance, GameTypes.FirstGridWidth(stash));
+
+                if (said != null) Say(said);
+            }
+            catch (Exception e)
+            {
+                Say("flea add offer window: could not widen it -- " + e.Message);
+            }
+
+            _offerWindow = __instance;
+            _offerFrames = 0;
+        }
+
+        private static FieldInfo _offerGridView;
+
+        /// <summary>
+        /// <c>TraderDealScreen.Show(trader, profile, stashController, ...)</c>: the
+        /// stash's width comes off <c>stashController.Inventory.Stash</c>.
+        /// </summary>
+        private static void AfterTraderShow(MonoBehaviour __instance, object[] __args)
+        {
+            try
+            {
+                var panel = _traderStashPanel.GetValue(__instance) as MonoBehaviour;
+
+                if (panel == null || __args == null || __args.Length < 3) return;
+
+                var inventory = Member(__args[2], "Inventory");
+                var columns = GameTypes.FirstGridWidth(Member(inventory, "Stash"));
+
+                if (columns <= 0) return;
+
+                ScreenWiden.Begin(panel, StashScreen.Trader, __instance, columns, Say);
+            }
+            catch (Exception e)
+            {
+                Say("trader: could not lay the screen out on open -- " + e.Message);
+            }
+        }
+
+        /// <summary>A public property or field by name, or null.</summary>
+        private static object Member(object from, string name)
+        {
+            if (from == null) return null;
+
+            // Plain reflection: AccessTools logs a warning for every miss, and one of
+            // the two is always a miss.
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance;
+
+            var type = from.GetType();
+            var property = type.GetProperty(name, flags);
+
+            if (property != null) return property.GetValue(from, null);
+
+            var field = type.GetField(name, flags);
+
+            return field != null ? field.GetValue(from) : null;
         }
 
         /// <summary>
@@ -222,6 +378,11 @@ namespace UltrawideStash.Probe
                 case StashScreen.ScavTransfer:
                 case StashScreen.MailTransfer:
                 case StashScreen.HideoutTransfer:
+                case StashScreen.Trader:
+                    // The trader screen is a menu screen and passes inRaid false; the
+                    // check is only so nothing here could ever run on a raid screen.
+                    if (kind == StashScreen.Trader && GameTypes.InRaid(__args, GameTypes.SimpleStashPanelShowInRaid)) return;
+
                     ScreenWiden.Begin(
                         __instance,
                         kind,
@@ -230,7 +391,7 @@ namespace UltrawideStash.Probe
                         Say);
                     return;
 
-                // A trader, prestige or the in-raid transit screen.
+                // Prestige or the in-raid transit screen.
                 // Nothing to widen, and measuring one of them would hand the server
                 // a panel that is not the character screen's.
                 case StashScreen.Other:
@@ -267,9 +428,38 @@ namespace UltrawideStash.Probe
         /// Poll for the grid appearing. Cheap: a null check on every frame the stash
         /// is not opening, and at most a short burst of hierarchy walks after it is.
         /// </summary>
+        /// <summary>
+        /// After the game's own Update, coroutines and animations: put back any widened
+        /// transfer or trader screen something else has reset, before it is drawn.
+        /// </summary>
+        private void LateUpdate()
+        {
+            ScreenWiden.Guard(Say);
+        }
+
         private void Update()
         {
             ScreenWiden.Tick(Say);
+
+            if (_offerWindow != null && ++_offerFrames >= 5)
+            {
+                try
+                {
+                    if (_offerGridView == null) _offerGridView = AccessTools.Field(_offerWindow.GetType(), "_gridView");
+
+                    var said = OfferWindowWiden.Check(
+                        _offerWindow,
+                        _offerGridView != null ? _offerGridView.GetValue(_offerWindow) as Component : null);
+
+                    if (said != null) Say(said);
+                }
+                catch (Exception e)
+                {
+                    Say("flea add offer window: could not check it -- " + e.Message);
+                }
+
+                _offerWindow = null;
+            }
 
             // Another mod may rewrite the inventory layout a few frames after it opens
             // (UIScale.Reloaded does); the widening is re-applied if so.

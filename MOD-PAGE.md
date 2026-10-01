@@ -63,10 +63,14 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
   — including anything in extra rows from a stash-rows bonus.
 - Sizes itself to your screen. You can set `columns` by hand in
   `ultrawidestash.config.json`, capped at what your monitor can show.
+- **Wide at the traders and on the flea market** (new in 1.1.0) — on the trader screen
+  the stash grows left and the Buy / Sell column moves over to make room. When you list
+  an item on the flea market, the add-offer window gets wider so your whole stash shows.
 - **Wide on the transfer screens too** — the scav loot transfer after a raid, receiving
   items from mail, and putting items into a hideout area. The stash grows into the empty
   space beside the screen and **never covers the buttons** (Next, Sell All, Receive All
-  and the rest). Turn it off with `WidenTransferScreens` in the BepInEx config.
+  and the rest). Turn these, the traders and the flea window off with
+  `WidenTransferScreens` in the BepInEx config.
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
   crates, bodies and loot panels are left alone. The stash widens again when you're back
   in the menu.
@@ -109,4 +113,6 @@ inventory screen as a 16:9 block in the middle of the monitor, and the stash sta
 
 For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it,
 and **by a player on a real 5120x1440 (32:9) monitor**, where the stash filled the
-screen. 2560x1080 hasn't been reported yet. If you play at it, please say how it looks.
+screen. The trader screen and the flea window (1.1.0) have been tested at 3440x1440 only.
+At 5120x1440 they should fit all 39 columns, but nobody has tried it yet. 2560x1080 hasn't
+been reported yet either. If you play at either, please say how it looks.

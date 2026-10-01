@@ -214,4 +214,119 @@ public class ScreenLayoutTests
             }
         }
     }
+
+    // ---- the trader screen ----------------------------------------------------------
+    //
+    // Read off a 3440x1440 screenshot of Prapor's screen (2026-09-30), same canvas. It
+    // is the reverse of the transfer screens: already full width, the stash panel at
+    // the right edge, the deal panel centred, the showcase at the left edge, and ~310
+    // px of nothing on each side of the deal panel.
+
+    private static readonly Box TraderPanel = new(598f, -464f, 1278f, 272f);
+
+    private static Obstacle Showcase() => new() { Name = "Showcase", Box = new Box(-1280f, -464f, -645f, 295f) };
+
+    private static Obstacle Deal(bool movable = true) => new()
+    {
+        Name = "Deal",
+        Box = new Box(-252f, -464f, 252f, 308f),
+        Movable = movable,
+    };
+
+    [Fact]
+    public void TheTraderScreenGetsAllNineteenColumnsBySlidingTheDealPanel()
+    {
+        var obstacles = new List<Obstacle> { Showcase(), Deal() };
+
+        var plan = ScreenLayout.Plan(Canvas, TraderPanel, obstacles, 19, Chrome);
+
+        Assert.True(plan.Changed);
+        Assert.Equal(19, plan.Columns);
+        Assert.Equal(TraderPanel.XMax, plan.Right);
+        Assert.Same(obstacles[1], plan.Neighbour);
+
+        // The deal panel ends up between the showcase and the stash, clear of both.
+        var deal = obstacles[1].Box.Shifted(-plan.Shift);
+
+        Assert.True(deal.XMin >= Showcase().Box.XMax + ScreenLayout.Gap - 0.01f);
+        Assert.True(deal.XMax + ScreenLayout.Gap <= plan.Left + 0.01f);
+    }
+
+    /// <summary>
+    /// The trader screen as the live log measured it (2026-09-30, 3440x1440): the deal
+    /// column is two stacked siblings -- TradeControll, which may slide, and the buy
+    /// panel, which reads as a button -- the filter strip hangs 36 px left of the
+    /// stash panel, and the chrome inside it is the 10 px scrollbar. The first build
+    /// saw the buy panel as a wall behind TradeControll and stopped at 11 columns.
+    /// </summary>
+    [Fact]
+    public void TheLiveTraderScreenSlidesTheWholeDealColumnForNineteenColumns()
+    {
+        var panel = new Box(598f, -465f, 1282f, 275f);
+        var control = new Obstacle { Name = "TradeControll", Box = new Box(-253f, -470f, 253f, 275f), Movable = true, CanRide = true };
+        var barter = new Obstacle { Name = "Barter Scheme Panel", Box = new Box(-253f, -465f, 253f, 231f), IsButton = true, CanRide = true };
+        var left = new Obstacle { Name = "Left Person", Box = new Box(-1282f, -465f, -640f, 275f), Movable = true, CanRide = true };
+        const float overhang = 36f;
+
+        var plan = ScreenLayout.Plan(Canvas, panel, new List<Obstacle> { control, barter, left }, 19, 10f, overhang);
+
+        Assert.True(plan.Changed);
+        Assert.Equal(19, plan.Columns);
+        Assert.Same(control, plan.Neighbour);
+        Assert.Equal(new[] { barter }, plan.Riders);
+
+        // The strip clears the slid column, and the column clears the showcase.
+        Assert.True(control.Box.XMax - plan.Shift + ScreenLayout.Gap <= plan.Left - overhang + 0.01f);
+        Assert.True(control.Box.XMin - plan.Shift >= left.Box.XMax + ScreenLayout.Gap - 0.01f);
+    }
+
+    /// <summary>
+    /// 5120x1440: a 3840x1080 canvas and a 39-column grid. Not measured -- the 3440x1440
+    /// layout carried over by its anchors, as the live dump gives them: the showcase
+    /// pinned left (ax 0), the stash pinned right (ax 1), the deal column centred (ax
+    /// 0.5), each keeping its size. That assumes the trader screen spans the canvas at
+    /// 32:9 as it does at 21:9.
+    /// </summary>
+    [Fact]
+    public void TheTraderScreenAt32By9GetsAllThirtyNineColumns()
+    {
+        var canvas = new Box(-1920f, -540f, 1920f, 540f);
+        var panel = new Box(1228f, -465f, 1912f, 275f);
+        var control = new Obstacle { Name = "TradeControll", Box = new Box(-253f, -470f, 253f, 275f), Movable = true, CanRide = true };
+        var barter = new Obstacle { Name = "Barter Scheme Panel", Box = new Box(-253f, -465f, 253f, 231f), IsButton = true, CanRide = true };
+        var left = new Obstacle { Name = "Left Person", Box = new Box(-1912f, -465f, -1270f, 275f), Movable = true, CanRide = true };
+        const float overhang = 38f;
+
+        var plan = ScreenLayout.Plan(canvas, panel, new List<Obstacle> { control, barter, left }, 39, 10f, overhang);
+
+        Assert.True(plan.Changed);
+        Assert.Equal(39, plan.Columns);
+        Assert.True(control.Box.XMax - plan.Shift + ScreenLayout.Gap <= plan.Left - overhang + 0.01f);
+        Assert.True(control.Box.XMin - plan.Shift >= left.Box.XMax + ScreenLayout.Gap - 0.01f);
+    }
+
+    [Fact]
+    public void WithoutTheBuyPanelRidingAlongTheTraderStashStopsShort()
+    {
+        var panel = new Box(598f, -465f, 1282f, 275f);
+        var control = new Obstacle { Name = "TradeControll", Box = new Box(-253f, -470f, 253f, 275f), Movable = true, CanRide = true };
+        var barter = new Obstacle { Name = "Barter Scheme Panel", Box = new Box(-253f, -465f, 253f, 231f), IsButton = true };
+
+        var plan = ScreenLayout.Plan(Canvas, panel, new List<Obstacle> { control, barter }, 19, 10f, 36f);
+
+        Assert.True(plan.Columns < 19);
+    }
+
+    [Fact]
+    public void AnImmovableDealPanelStillGivesTheTraderStashTheGapBesideIt()
+    {
+        var obstacles = new List<Obstacle> { Showcase(), Deal(movable: false) };
+
+        var plan = ScreenLayout.Plan(Canvas, TraderPanel, obstacles, 19, Chrome);
+
+        Assert.True(plan.Changed);
+        Assert.Null(plan.Neighbour);
+        Assert.True(plan.Columns > 10 && plan.Columns < 19);
+        Assert.True(plan.Left >= 252f + ScreenLayout.Gap - 0.01f);
+    }
 }
