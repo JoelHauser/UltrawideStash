@@ -817,6 +817,16 @@ See *Traders and the flea add-offer window (1.1.0)*. Tagged `v1.1.0`,
 270 logic tests, 19 database checks. Verified in game at
 3440x1440 only; 32:9 is arithmetic and a planner test.
 
+### 1.1.1, released 2026-10-01 -- the trader screen at 32:9
+
+A fix release for Forge issue #3: at 5120x1440 the trader screen is a 1920 px frame and
+1.1.0 gave the stash 11 of 39 columns there. See *The trader screen at 32:9 (Forge issue
+#3)*. Only the client plugin changed; the server is the same but for its version.
+Tagged `v1.1.1`, `UltrawideStash_V1.1.1.zip` (sha256 `2afd2e72a2b838ca...`), DLLs
+stamped `1.1.1+d2521b5`. 277 logic tests, 19 database checks. **Not run in game** at any
+resolution -- the change is a no-op wherever the trader screen already spans the canvas,
+which is every case verified so far.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
