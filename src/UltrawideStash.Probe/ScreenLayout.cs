@@ -84,6 +84,9 @@ namespace UltrawideStash.Probe
         /// of one before.
         /// </summary>
         internal Box[] Inner = new Box[0];
+
+        /// <summary>Names for <see cref="Inner"/>, same order, for the log. May be shorter or empty.</summary>
+        internal string[] InnerNames = new string[0];
     }
 
     /// <summary>What <see cref="ScreenLayout.Plan"/> decided.</summary>
@@ -106,7 +109,14 @@ namespace UltrawideStash.Probe
         /// <summary>How far <see cref="Neighbour"/> slides left.</summary>
         internal float Shift;
 
-        /// <summary>Obstacles sitting inside <see cref="Neighbour"/> that slide with it.</summary>
+        /// <summary>
+        /// Panels further left that <see cref="Neighbour"/> pushes ahead of it, nearest
+        /// first, each sliding by the same <see cref="Shift"/>. Empty unless the
+        /// neighbour's own margin was not enough.
+        /// </summary>
+        internal List<Obstacle> Pushed = new List<Obstacle>();
+
+        /// <summary>Obstacles drawn over <see cref="Neighbour"/> or a pushed panel that slide with it.</summary>
         internal List<Obstacle> Riders = new List<Obstacle>();
 
         /// <summary>Columns the panel shows after the plan.</summary>
@@ -131,7 +141,8 @@ namespace UltrawideStash.Probe
     ///
     /// Growth is rightward first, into the empty canvas an ultrawide has past the
     /// screen's 16:9 frame, then leftward. A panel standing in the way on the left
-    /// may slide left into its own empty margin, keeping its size. Buttons are never
+    /// may slide left into its own empty margin, keeping its size, pushing the panels
+    /// behind it along when that margin is theirs (the scav screen). Buttons are never
     /// moved and never covered: one that pokes up into the bottom of the panel's
     /// span is cleared by bringing the panel's bottom edge up, and one any taller
     /// than that stops the growth outright.
@@ -284,27 +295,19 @@ namespace UltrawideStash.Probe
                 if (nearest == null || o.Box.XMax > nearest.Box.XMax) nearest = o;
             }
 
-            // What rides along with the nearest: plain siblings drawn inside its box.
-            var riders = new List<Obstacle>();
-
-            if (nearest != null && nearest.Movable)
-            {
-                foreach (var o in blockers)
-                {
-                    if (o != nearest && o.CanRide && Inside(o.Box, nearest.Box)) riders.Add(o);
-                }
-            }
+            // What slides when the nearest has to: the nearest itself, then, if its own
+            // margin is not enough, the panel standing behind it, and so on.
+            var trains = nearest != null && nearest.Movable
+                ? Trains(canvas, panel, nearest, blockers, obstacles)
+                : new List<Train>();
 
             foreach (var o in blockers)
             {
-                if (o == nearest || riders.Contains(o) || o.Box.XMax > panel.XMin + 1f) continue;
+                if (o == nearest || o.Box.XMax > panel.XMin + 1f) continue;
+                if (trains.Count > 0 && trains[0].Riders.Contains(o)) continue;
 
                 behind = Math.Max(behind, o.Box.XMax + Gap);
             }
-
-            var neighbourRoom = nearest != null && nearest.Movable
-                ? RoomToSlide(canvas, nearest, obstacles)
-                : 0f;
 
             var why = string.Empty;
 
@@ -324,6 +327,7 @@ namespace UltrawideStash.Probe
                 }
 
                 var shift = 0f;
+                Train train = null;
 
                 if (left > 0f && nearest != null && reach < nearest.Box.XMax + Gap)
                 {
@@ -335,18 +339,42 @@ namespace UltrawideStash.Probe
                         continue;
                     }
 
-                    if (shift > neighbourRoom)
+                    // The shortest train that makes the room, so nothing moves that
+                    // did not have to. Why the longest one failed is the reason given:
+                    // a shorter one failing in the iteration that succeeds says nothing,
+                    // and reporting it is what made the first pushing log read
+                    // "'Containers Panel' has only 0 px" while the containers column slid.
+                    var failed = string.Empty;
+
+                    foreach (var t in trains)
                     {
-                        why = string.Format("'{0}' has only {1:0} px to move into", nearest.Name, neighbourRoom);
-                        continue;
+                        if (reach < t.Behind)
+                        {
+                            failed = "no room on the left";
+                            continue;
+                        }
+
+                        if (shift > t.Room)
+                        {
+                            failed = string.Format("{0} only {1:0} px to move into", t.Describe(), t.Room);
+                            continue;
+                        }
+
+                        var covered = t.NewlyCovered(shift, obstacles);
+
+                        if (covered != null)
+                        {
+                            failed = string.Format("sliding {0} would put {1}", t.Describe(), covered);
+                            continue;
+                        }
+
+                        train = t;
+                        break;
                     }
 
-                    var covered = NewlyCovered(nearest, shift, obstacles, riders);
-
-                    if (covered != null)
+                    if (train == null)
                     {
-                        why = string.Format(
-                            "sliding '{0}' would put '{1}' over something in it", nearest.Name, covered.Name);
+                        why = failed;
                         continue;
                     }
                 }
@@ -365,9 +393,10 @@ namespace UltrawideStash.Probe
                 plan.Left = newLeft;
                 plan.Right = newRight;
                 plan.Lift = lift;
-                plan.Neighbour = shift > 0f ? nearest : null;
-                plan.Shift = shift;
-                plan.Riders = shift > 0f ? riders : new List<Obstacle>();
+                plan.Neighbour = train != null ? nearest : null;
+                plan.Shift = train != null ? shift : 0f;
+                plan.Pushed = train != null ? train.Members.GetRange(1, train.Members.Count - 1) : new List<Obstacle>();
+                plan.Riders = train != null ? train.Riders : new List<Obstacle>();
                 plan.Columns = columns;
                 plan.Why = columns == gridColumns
                     ? string.Format("room for all {0} columns.", columns)
@@ -381,12 +410,15 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
-        /// A button poking up into the bottom of the panel's span, low enough to clear
-        /// by bringing the bottom edge up rather than stopping the growth.
+        /// Something poking up into the bottom of the panel's span, low enough to clear
+        /// by bringing the bottom edge up rather than stopping the growth. Usually a
+        /// button, but not only: the scav screen's Next and Back sit in a
+        /// <c>ButtonsPanel</c> that is not itself one, and counting that bar as a wall
+        /// held the stash to 15 of 19 columns in the first scav log.
         /// </summary>
         private static bool Low(Obstacle o, float bottom)
         {
-            return o.IsButton && o.Box.YMax + LiftGap - bottom <= MaxLift;
+            return o.Box.YMax + LiftGap - bottom <= MaxLift;
         }
 
         /// <summary>Whether <paramref name="inner"/> lies within <paramref name="outer"/>, give or take 2 px.</summary>
@@ -404,46 +436,215 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
-        /// How far a panel can slide left, keeping its size: to the canvas margin or
-        /// short of the first thing in its own band that it does not overlap today.
-        /// Buttons count in full here -- a sliding panel cannot duck under one.
+        /// Whether <paramref name="o"/> is drawn mostly over <paramref name="n"/>: more
+        /// than half its own area. The scav screen's <c>Left Glow</c> sits over the top
+        /// of the scav's gear column and pokes out above it, so it is not inside it, but
+        /// it belongs to it and has to slide with it.
         /// </summary>
-        private static float RoomToSlide(Box canvas, Obstacle n, IList<Obstacle> obstacles)
+        private static bool MostlyOver(Box o, Box n)
         {
-            var limit = canvas.XMin + EdgeMargin;
+            var w = Math.Min(o.XMax, n.XMax) - Math.Max(o.XMin, n.XMin);
+            var h = Math.Min(o.YMax, n.YMax) - Math.Max(o.YMin, n.YMin);
+            var area = o.Width * o.Height;
 
-            foreach (var o in obstacles)
-            {
-                if (o == n || o.Box.Overlaps(n.Box)) continue;
-                if (!o.Box.InBand(n.Box.YMin, n.Box.YMax)) continue;
-                if (o.Box.XMax > n.Box.XMin + 1f) continue;
-
-                limit = Math.Max(limit, o.Box.XMax + Gap);
-            }
-
-            return Math.Max(0f, n.Box.XMin - limit);
+            return w > 0f && h > 0f && area > 0f && w * h > area / 2f;
         }
 
         /// <summary>
-        /// Whether sliding <paramref name="n"/> puts anything it overlaps today --
-        /// the Next button over the scav's pouch, say -- over a piece of it that was
-        /// clear before. Returns the offender, or null. Something that already sat
-        /// over part of it (Next over the empty bottom of the containers column) may
-        /// keep doing so; it just may not land on anything new.
+        /// Panels that slide left together by one amount, keeping the spacing the game
+        /// gave them: the stash's nearest neighbour first, then whatever it would run
+        /// into, and so on. Riders are what is drawn over a member and goes with it.
         /// </summary>
-        private static Obstacle NewlyCovered(Obstacle n, float shift, IList<Obstacle> obstacles, List<Obstacle> riders)
+        private sealed class Train
         {
+            internal readonly List<Obstacle> Members = new List<Obstacle>();
+
+            internal readonly List<Obstacle> Riders = new List<Obstacle>();
+
+            /// <summary>How far the whole train can slide.</summary>
+            internal float Room;
+
+            /// <summary>What the stash panel's grown left edge must stay clear of, the train aside.</summary>
+            internal float Behind;
+
+            internal bool Moves(Obstacle o)
+            {
+                return Members.Contains(o) || Riders.Contains(o);
+            }
+
+            internal string Describe()
+            {
+                return Members.Count == 1
+                    ? string.Format("'{0}' has", Members[0].Name)
+                    : string.Format(
+                        "'{0}' and the {1} behind it have", Members[0].Name,
+                        Members.Count == 2 ? "panel" : (Members.Count - 1) + " panels");
+            }
+
+            /// <summary>
+            /// Whether sliding the train puts anything a member overlaps today -- the
+            /// Next button over the scav's pouch, say -- over a piece of it that was
+            /// clear before. Returns what for the log, or null. Something that already
+            /// sat over part of it (Next over the empty bottom of the containers column)
+            /// may keep doing so; it just may not land on anything new.
+            ///
+            /// Only pieces worth keeping clear count (<see cref="Piece"/>): what the
+            /// member draws within its own box, and not a sliver. The second scav run
+            /// stopped at 16 columns because a full-height line at the containers
+            /// column's right edge would have met the bottom of Next / Back's holder.
+            /// </summary>
+            internal string NewlyCovered(float shift, IList<Obstacle> obstacles)
+            {
+                foreach (var n in Members)
+                {
+                    foreach (var o in obstacles)
+                    {
+                        if (Moves(o) || !o.Box.Overlaps(n.Box)) continue;
+
+                        for (var i = 0; i < n.Inner.Length; i++)
+                        {
+                            Box inner;
+
+                            if (!Piece(n.Inner[i], n.Box, out inner)) continue;
+
+                            if (!inner.Overlaps(o.Box) && inner.Shifted(-shift).Overlaps(o.Box))
+                            {
+                                return string.Format(
+                                    "'{0}' over '{1}' ({2}) in it", o.Name,
+                                    i < n.InnerNames.Length ? n.InnerNames[i] : "a piece", inner);
+                            }
+                        }
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>Narrower than this, a drawn piece is a line or a scrollbar, not something a button may not cover.</summary>
+        internal const float MinPieceWidth = 16f;
+
+        /// <summary>Shorter than this, a drawn piece is a rule under a heading.</summary>
+        internal const float MinPieceHeight = 4f;
+
+        /// <summary>
+        /// The part of a drawn piece worth keeping clear of buttons: clipped to the
+        /// panel that draws it (anything outside is masked scroll content), and false
+        /// for a sliver.
+        /// </summary>
+        internal static bool Piece(Box inner, Box owner, out Box piece)
+        {
+            piece = new Box(
+                Math.Max(inner.XMin, owner.XMin), Math.Max(inner.YMin, owner.YMin),
+                Math.Min(inner.XMax, owner.XMax), Math.Min(inner.YMax, owner.YMax));
+
+            return piece.Width >= MinPieceWidth && piece.Height >= MinPieceHeight;
+        }
+
+        /// <summary>The most panels one slide may push, the stash's neighbour included.</summary>
+        private const int MaxTrain = 4;
+
+        /// <summary>
+        /// Every train worth trying, shortest first. The first is the nearest alone
+        /// with what rides on it -- all the trader and mail screens have ever needed.
+        /// Each next one adds the movable panel that stopped the one before.
+        ///
+        /// The scav screen is why there is more than one: its gear column, containers
+        /// column and stash stand 4 and 7 px apart in a 16:9 frame, so the containers
+        /// column has no margin of its own, and every pixel the stash needs on the left
+        /// has to come from pushing both columns into the ~350 px left of the frame.
+        /// </summary>
+        private static List<Train> Trains(
+            Box canvas, Box panel, Obstacle nearest, List<Obstacle> blockers, IList<Obstacle> obstacles)
+        {
+            var trains = new List<Train>();
+            var members = new List<Obstacle> { nearest };
+
+            while (true)
+            {
+                var train = new Train();
+                train.Members.AddRange(members);
+
+                foreach (var o in blockers)
+                {
+                    if (members.Contains(o) || !o.CanRide) continue;
+
+                    foreach (var m in members)
+                    {
+                        if (Inside(o.Box, m.Box) || MostlyOver(o.Box, m.Box))
+                        {
+                            train.Riders.Add(o);
+                            break;
+                        }
+                    }
+                }
+
+                Obstacle limiter = null;
+                train.Room = float.MaxValue;
+
+                foreach (var m in members)
+                {
+                    Obstacle by;
+                    var room = RoomToSlide(canvas, m, obstacles, train, out by);
+
+                    if (room < train.Room)
+                    {
+                        train.Room = room;
+                        limiter = by;
+                    }
+                }
+
+                foreach (var r in train.Riders)
+                {
+                    Obstacle by;
+                    train.Room = Math.Min(train.Room, RoomToSlide(canvas, r, obstacles, train, out by));
+                }
+
+                train.Behind = canvas.XMin + EdgeMargin;
+
+                foreach (var o in blockers)
+                {
+                    if (train.Moves(o) || o.Box.XMax > panel.XMin + 1f) continue;
+
+                    train.Behind = Math.Max(train.Behind, o.Box.XMax + Gap);
+                }
+
+                trains.Add(train);
+
+                if (limiter == null || !limiter.Movable || train.Moves(limiter) || members.Count >= MaxTrain) break;
+
+                members.Add(limiter);
+            }
+
+            return trains;
+        }
+
+        /// <summary>
+        /// How far a panel can slide left, keeping its size: to the canvas margin or
+        /// short of the first thing in its own band that it does not overlap today and
+        /// that does not slide with it. Buttons count in full here -- a sliding panel
+        /// cannot duck under one.
+        /// </summary>
+        /// <param name="by">What stops it, or null for the canvas margin.</param>
+        private static float RoomToSlide(Box canvas, Obstacle n, IList<Obstacle> obstacles, Train train, out Obstacle by)
+        {
+            var limit = canvas.XMin + EdgeMargin;
+            by = null;
+
             foreach (var o in obstacles)
             {
-                if (o == n || riders.Contains(o) || !o.Box.Overlaps(n.Box)) continue;
+                if (o == n || train.Moves(o) || o.Box.Overlaps(n.Box)) continue;
+                if (!o.Box.InBand(n.Box.YMin, n.Box.YMax)) continue;
+                if (o.Box.XMax > n.Box.XMin + 1f) continue;
 
-                foreach (var inner in n.Inner)
+                if (o.Box.XMax + Gap > limit)
                 {
-                    if (!inner.Overlaps(o.Box) && inner.Shifted(-shift).Overlaps(o.Box)) return o;
+                    limit = o.Box.XMax + Gap;
+                    by = o;
                 }
             }
 
-            return null;
+            return Math.Max(0f, n.Box.XMin - limit);
         }
     }
 }

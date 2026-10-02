@@ -1603,3 +1603,47 @@ Two faults, both fixed on `main` after 1.1.0 (not yet released; 277 logic tests)
 **Not run in game.** The owed check is a 32:9 trader log showing `stretched: the trader
 screen was a 1920 px frame in a 3840 px canvas`, `room for 39`, `CHECK ... fits`, and no
 `re-plan moved` pairs on later opens.
+
+## The scav loot transfer, first live run (after 1.1.1)
+
+2026-10-02, 3440x1440, 1.1.1: after a scav raid the stash was not wide. The block said
+`plan: room for 15 of 19 columns: '...Containers Panel' has only 0 px to move into`,
+`widened: 680 -> 998 px (15 columns)`, `CHECK ... OVERFLOW by 248.0 px`. The real screen
+is not the screenshot shape the 1.0.3 tests used (one `LeftSide` 10 px from the stash):
+
+```
+Items Panel/Left Panel        x -937..-313   may slide   the scav's gear
+Items Panel/Containers Panel  x -309..261    may slide   4 px right of it
+Stash Panel                   x  268..948                7 px right of that
+ButtonsPanel                  x -125..125, y -490..-364  Next / Back; NOT a button
+SellAllButton                 x  125..375, y -490..-434  button
+Left Glow                     x -960..-315, y 152..540   may slide, over the gear column
+```
+
+Two faults, both fixed (uncommitted, see the memory note for state):
+
+- **One neighbour only.** The containers column has no margin of its own; the room is
+  ~350 px left of the gear column. `ScreenLayout.Plan` now tries **trains**, shortest
+  first: the nearest alone (all the trader and mail screens use), then it plus the
+  movable panel that stopped it, up to 4. All slide by one shift, keeping the game's
+  spacing. Riders are `CanRide` obstacles inside **or mostly over** (more than half their
+  area) any member -- that is what carries `Left Glow`. `LayoutPlan.Pushed` lists the
+  extra members; `ScreenWiden` slides them and logs `pushing '...'`.
+- **`ButtonsPanel` was a wall.** `IsButton` looks at the node only, and this bar holds
+  the buttons. `Low` no longer needs `IsButton`: anything whose top is within `MaxLift`
+  of the panel's bottom is cleared by lifting the bottom edge. For this screen: 46 px.
+
+Expected next block: `room for all 19 columns`, `'Containers Panel' slid 257 px left,
+pushing 'Left Panel' with 'Left Glow'`, `bottom edge up 46 px`, `CHECK ... fits`. If it
+says `would put 'ButtonsPanel' over something in it`, a slot at the bottom right of the
+containers column would land under Next -- the refusal is by design.
+
+**Second run, same day: 16 columns.** The train worked but slid only 68 px. Two fixes:
+`why` named a shorter train that failed inside the *successful* iteration ("has only 0
+px" while the column slid); it now reports why the longest train failed in the column
+count above. And `InnerBoxes` returns every Graphic, invisible lines and masked scroll
+content included. A full-height line at the containers column's right edge (~x 255, seen
+in the screenshot) would meet the bottom of ButtonsPanel's box after ~130 px. That is the
+suspected cause, **not confirmed**. `ScreenLayout.Piece` now clips each piece to its
+panel and skips slivers (< 16 px wide or < 4 px tall). A refusal names the piece:
+`would put 'ButtonsPanel' over '<path>' (x .., y ..) in it`.

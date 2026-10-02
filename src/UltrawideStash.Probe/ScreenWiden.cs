@@ -695,7 +695,7 @@ namespace UltrawideStash.Probe
             {
                 if (!o.Movable) continue;
 
-                o.Inner = InnerBoxes(Refs[o], canvasRt);
+                o.Inner = InnerBoxes(Refs[o], canvasRt, out o.InnerNames);
             }
 
             _buttons = obstacles.FindAll(o => o.IsButton);
@@ -748,6 +748,7 @@ namespace UltrawideStash.Probe
             {
                 slid.Add(neighbour);
 
+                foreach (var p in plan.Pushed) slid.Add(Refs[p]);
                 foreach (var r in plan.Riders) slid.Add(Refs[r]);
             }
 
@@ -810,7 +811,10 @@ namespace UltrawideStash.Probe
                 plan.Columns,
                 plan.Lift > 0f ? string.Format(", bottom edge up {0:0} px to clear the buttons", plan.Lift) : string.Empty,
                 neighbour != null
-                    ? string.Format(", '{0}' slid {1:0} px left{2}", neighbour.name, plan.Shift,
+                    ? string.Format(", '{0}' slid {1:0} px left{2}{3}", neighbour.name, plan.Shift,
+                        plan.Pushed.Count > 0
+                            ? ", pushing " + string.Join(", ", plan.Pushed.ConvertAll(p => "'" + Refs[p].name + "'").ToArray())
+                            : string.Empty,
                         plan.Riders.Count > 0
                             ? " with " + string.Join(", ", plan.Riders.ConvertAll(r => "'" + Refs[r].name + "'").ToArray())
                             : string.Empty)
@@ -1050,11 +1054,14 @@ namespace UltrawideStash.Probe
         /// The drawn pieces inside a movable obstacle, for the check that sliding it
         /// does not put a button over one of them.
         /// </summary>
-        private static Box[] InnerBoxes(RectTransform root, RectTransform canvasRt)
+        private static Box[] InnerBoxes(RectTransform root, RectTransform canvasRt, out string[] names)
         {
+            names = new string[0];
+
             if (root == null) return new Box[0];
 
             var boxes = new List<Box>();
+            var named = new List<string>();
 
             foreach (var b in root.GetComponentsInChildren<Behaviour>(false))
             {
@@ -1066,8 +1073,13 @@ namespace UltrawideStash.Probe
 
                 var box = Measure(rt, canvasRt);
 
-                if (box.Width >= 1f && box.Height >= 1f) boxes.Add(box);
+                if (box.Width < 1f || box.Height < 1f) continue;
+
+                boxes.Add(box);
+                named.Add(PathOf(rt, root));
             }
+
+            names = named.ToArray();
 
             return boxes.ToArray();
         }

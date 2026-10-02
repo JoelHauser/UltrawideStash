@@ -79,6 +79,7 @@ public class ScreenLayoutTests
         var plan = ScreenLayout.Plan(Canvas, Panel, obstacles, 19, Chrome);
 
         Assert.Same(obstacles[0], plan.Neighbour);
+        Assert.Empty(plan.Pushed);
 
         var slid = obstacles[0].Box.Shifted(-plan.Shift);
 
@@ -212,6 +213,150 @@ public class ScreenLayoutTests
                     Assert.False(slid.Overlaps(button.Box), $"slid LeftSide onto a button at x {x}, top {top}");
                 }
             }
+        }
+    }
+
+    // ---- the scav screen, as the game laid it out -----------------------------------
+    //
+    // From the first live scav block (3440x1440, 2026-10-02, 1.1.1), which gave 15 of
+    // 19 columns: "'Containers Panel' has only 0 px to move into". The screenshot shape
+    // above had one LeftSide; the real screen has the scav's gear column and the
+    // containers column as two panels 4 px apart, and Next / Back in a ButtonsPanel
+    // that is not itself a button.
+
+    private static readonly Box LiveScavPanel = new(268f, -402f, 948f, 460f);
+
+    private static Obstacle ScavGear(bool movable = true) => new()
+    {
+        Name = "Left Panel", Box = new Box(-937f, -402f, -313f, 463f), Movable = movable, CanRide = movable,
+    };
+
+    private static Obstacle ScavContainers() => new()
+    {
+        Name = "Containers Panel", Box = new Box(-309f, -402f, 261f, 460f), Movable = true, CanRide = true,
+    };
+
+    private static Obstacle ScavButtons() => new() { Name = "ButtonsPanel", Box = new Box(-125f, -490f, 125f, -364f) };
+
+    private static Obstacle ScavSellAll() => new()
+    {
+        Name = "SellAllButton", Box = new Box(125f, -490f, 375f, -434f), IsButton = true,
+    };
+
+    private static Obstacle ScavGlow() => new()
+    {
+        Name = "Left Glow", Box = new Box(-960f, 152f, -315f, 540f), Movable = true, CanRide = true,
+    };
+
+    private static List<Obstacle> LiveScav() =>
+        new() { ScavGear(), ScavContainers(), ScavButtons(), ScavSellAll(), ScavGlow() };
+
+    [Fact]
+    public void TheLiveScavScreenGetsAllNineteenColumnsByPushingBothColumns()
+    {
+        var obstacles = LiveScav();
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.Equal(19, plan.Columns);
+        Assert.Same(obstacles[1], plan.Neighbour);
+        Assert.Equal(new[] { obstacles[0] }, plan.Pushed);
+        Assert.Contains(obstacles[4], plan.Riders);
+
+        foreach (var o in new[] { obstacles[0], obstacles[1], obstacles[4] })
+        {
+            Assert.True(o.Box.Shifted(-plan.Shift).XMin >= Canvas.XMin + ScreenLayout.EdgeMargin, o.Name);
+        }
+
+        Assert.True(plan.Left - obstacles[1].Box.Shifted(-plan.Shift).XMax >= ScreenLayout.Gap - 0.01f);
+    }
+
+    [Fact]
+    public void TheLiveScavScreenKeepsNextBackAndSellAllClear()
+    {
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, LiveScav(), 19, Chrome);
+        var final = Final(plan, LiveScavPanel);
+
+        Assert.False(final.Overlaps(ScavButtons().Box));
+        Assert.False(final.Overlaps(ScavSellAll().Box));
+        Assert.True(plan.Lift > 0f);
+        Assert.True(plan.Lift <= ScreenLayout.MaxLift);
+    }
+
+    /// <summary>
+    /// The second live scav run: the train slid only 68 px, 16 columns. A full-height
+    /// line at the containers column's right edge would have met the bottom of Next /
+    /// Back's holder after ~130 px. A line is not something a button may not cover.
+    /// </summary>
+    [Fact]
+    public void AnEdgeLineInTheContainersColumnDoesNotStopThePush()
+    {
+        var obstacles = LiveScav();
+        obstacles[1].Inner = new[] { new Box(252f, -402f, 258f, 460f) };
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.Equal(19, plan.Columns);
+    }
+
+    [Fact]
+    public void ScrollContentBelowTheContainersColumnDoesNotStopThePush()
+    {
+        var obstacles = LiveScav();
+        obstacles[1].Inner = new[] { new Box(150f, -520f, 240f, -420f) };
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.Equal(19, plan.Columns);
+    }
+
+    [Fact]
+    public void ASlotThePushWouldPutUnderNextIsRefusedAndNamed()
+    {
+        var obstacles = LiveScav();
+        obstacles[1].Inner = new[] { new Box(140f, -402f, 240f, -330f) };
+        obstacles[1].InnerNames = new[] { "Pouch/Slot" };
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.True(plan.Columns < 19);
+        Assert.Contains("'ButtonsPanel' over 'Pouch/Slot'", plan.Why);
+        Assert.Contains("and the panel behind it", plan.Why);
+
+        if (plan.Neighbour != null)
+        {
+            Assert.False(obstacles[1].Inner[0].Shifted(-plan.Shift).Overlaps(ScavButtons().Box));
+        }
+    }
+
+    [Fact]
+    public void AnImmovableGearColumnStopsThePushShortOfNineteen()
+    {
+        var obstacles = new List<Obstacle> { ScavGear(movable: false), ScavContainers(), ScavButtons(), ScavSellAll() };
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.True(plan.Columns < 19);
+        Assert.Empty(plan.Pushed);
+        Assert.Contains("has only", plan.Why);
+    }
+
+    [Fact]
+    public void APushNeverCarriesAColumnPastTheCanvasMargin()
+    {
+        var gear = new Obstacle
+        {
+            Name = "Left Panel", Box = new Box(-1240f, -402f, -313f, 463f), Movable = true, CanRide = true,
+        };
+        var obstacles = new List<Obstacle> { gear, ScavContainers(), ScavButtons(), ScavSellAll() };
+
+        var plan = ScreenLayout.Plan(Canvas, LiveScavPanel, obstacles, 19, Chrome);
+
+        Assert.True(plan.Columns < 19);
+
+        if (plan.Pushed.Contains(gear))
+        {
+            Assert.True(gear.Box.Shifted(-plan.Shift).XMin >= Canvas.XMin + ScreenLayout.EdgeMargin - 0.01f);
         }
     }
 
