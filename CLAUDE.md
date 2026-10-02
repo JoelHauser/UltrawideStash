@@ -827,6 +827,15 @@ stamped `1.1.1+d2521b5`. 277 logic tests, 19 database checks. **Not run in game*
 resolution -- the change is a no-op wherever the trader screen already spans the canvas,
 which is every case verified so far.
 
+### 1.1.2, released 2026-10-02 -- the scav loot transfer
+
+Up to 1.1.1 the scav screen gave 15 of 19 columns at 3440x1440. See *The scav loot
+transfer, first live run (after 1.1.1)*. Only the client plugin changed; the server is
+the same but for its version. Tagged `v1.1.2`, `UltrawideStash_V1.1.2.zip` (sha256
+`1fc412a913d00e1a...`), DLLs stamped `1.1.2+0ae02dd`. 284 logic tests, 19 database
+checks. **Verified in game** at 3440x1440 before release: 680 -> 1250 px, 19 columns,
+`fits, 4.0 px spare`. The hideout area transfer still has not been played through.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
