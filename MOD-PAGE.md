@@ -69,7 +69,8 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
 - **Wide on the transfer screens too** — the scav loot transfer after a raid, receiving
   items from mail, and putting items into a hideout area. The stash grows into the empty
   space beside the screen and **never covers the buttons** (Next, Sell All, Receive All
-  and the rest). Turn these, the traders and the flea window off with
+  and the rest). The scav screen shows all 19 columns at 3440x1440 from 1.1.2; earlier
+  versions stopped at 15. Turn these, the traders and the flea window off with
   `WidenTransferScreens` in the BepInEx config.
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
   crates, bodies and loot panels are left alone. The stash widens again when you're back

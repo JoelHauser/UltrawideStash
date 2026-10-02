@@ -11,8 +11,9 @@ on SPT 4.1.6 at 3440x1440, with UIScale.Reloaded and without it: a 19x36 stash i
 widened panel, with no scrollbar and no dead space. **32:9 (5120x1440) has been run on a
 physical monitor** by players: on 1.0.5 the inventory stretched to the full width and,
 with `GearPanelReserve` at its default, the stash filled it; on 1.1.1 the trader screen
-showed all 39 columns too, confirmed from the player's log. See [Status](#status) for what has and has not been
-checked.
+showed all 39 columns too, confirmed from the player's log. On 1.1.2 the scav loot
+transfer after a raid shows the whole stash too; up to 1.1.1 it stopped at 15 of 19
+columns. See [Status](#status) for what has and has not been checked.
 
 **From 1.1.0 the stash is wide at the traders and on the flea market too** — on the
 trader screen, and in the add-offer window you list items from. Up to 1.0.5 both kept
@@ -220,7 +221,10 @@ These screens are not laid out like the character screen, and where their button
 is prefab data the game's code does not carry. So the probe measures the screen as it is
 drawn and grows the panel only into space nothing occupies: right first, into the empty
 canvas beside the screen's 16:9 frame, then left. A panel standing in the way on the
-left can slide into its own empty margin. **Buttons are never moved and never
+left can slide into its own empty margin, and push the panels behind it along when
+the margin is theirs: on the scav screen the gear and containers columns move left
+together (from 1.1.2; before that only the containers column could move, it had no room,
+and the stash stopped at 15 of 19 columns). **Buttons are never moved and never
 covered** — one that reaches into the bottom of the panel's span (Next on the scav
 screen, Receive All on the mail screen) is cleared by bringing the panel's bottom edge
 up, by at most a row and a half, and one beside the panel stops it growing. The hideout
@@ -700,6 +704,10 @@ Compatibility.
   from the character screen.
 - **The flea market's add-offer window** (1.1.0) — 1200 → 1770 px, 19 columns, on screen
   when reopened and after being dragged to an edge.
+- **The scav loot transfer** (1.1.2) — 680 → 1250 px, 19 columns, `CHECK ... fits, 4.0 px
+  spare`; the containers and gear columns slid 257 px left together, and the bottom edge
+  came up 46 px to clear Next / Back. 1.0.3 to 1.1.1 gave 15 columns there and a
+  sideways scrollbar.
 - **16:9 and 32:9 layouts, simulated** (1.0.4, with UIScale.Reloaded) — by setting
   EFT's UI scale so a 3440x1440 display lays the menu out as a 1920- or 3840-wide
   canvas. At 1920 the panel stays vanilla and the log says why. At 3840 a 39x68 stash
@@ -726,8 +734,8 @@ Compatibility.
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
 - **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
   been seen in a live log.
-- **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same
-  code as the mail screen, but have not been played through.
+- **The hideout area transfer screen** (1.0.3). It uses the same code as the mail and scav
+  screens, but has not been played through.
 - **A clean install with 1.0.5.** The stretch was verified with UIScale.Reloaded
   switched off on the development install, which still runs about a hundred other
   plugins, not on an install with nothing else loaded.
