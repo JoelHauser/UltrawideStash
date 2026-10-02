@@ -9,9 +9,9 @@ machine. That mod stretches EFT's inventory screen, which vanilla keeps as a fix
 frame in the middle of the monitor. 1.0.5 does that stretch itself. It has been played
 on SPT 4.1.6 at 3440x1440, with UIScale.Reloaded and without it: a 19x36 stash in a
 widened panel, with no scrollbar and no dead space. **32:9 (5120x1440) has been run on a
-physical monitor** by a player on 1.0.5: the inventory stretched to the full width, and
-with `GearPanelReserve` at its default the stash filled it. That is their report and
-screenshots; their log was not seen. See [Status](#status) for what has and has not been
+physical monitor** by players: on 1.0.5 the inventory stretched to the full width and,
+with `GearPanelReserve` at its default, the stash filled it; on 1.1.1 the trader screen
+showed all 39 columns too, confirmed from the player's log. See [Status](#status) for what has and has not been
 checked.
 
 **From 1.1.0 the stash is wide at the traders and on the flea market too** — on the
@@ -636,8 +636,8 @@ The usual cause is EFT itself running at a 16:9 resolution on a wider monitor. E
 menus are 1920 px wide at *every* 16:9 resolution, so there is nothing to widen into.
 Set EFT's resolution in *Settings → Graphics* to your monitor's own, open your stash
 once, and restart the server. A 32:9 monitor (5120×1440) gets a 3840 px wide menu and
-a 39-column stash. That was simulated on a 3440×1440 display for 1.0.4, and a player
-has since run 1.0.5 on a physical 32:9 monitor.
+a 39-column stash. That was simulated on a 3440×1440 display for 1.0.4, and players
+have since run 1.0.5 and 1.1.1 on physical 32:9 monitors.
 
 The other cause is a changed **`GearPanelReserve`** in the BepInEx config. A higher
 value leaves the stash less room: at 1000 a 5120×1440 screen gets 27 columns instead of
@@ -669,7 +669,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5, and played on SPT 4.1.6.
-Clean at 0 warnings; 270 logic tests and 19 database checks pass. The probe carries no
+Clean at 0 warnings; 277 logic tests and 19 database checks pass. The probe carries no
 `Assembly-CSharp` or `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
@@ -711,16 +711,19 @@ Compatibility.
   stretched to the full width. With `GearPanelReserve` at 1000 the panel held 27 columns
   and a 39-wide grid scrolled sideways. Set back to 620, the stash filled the screen.
   From screenshots and the player's word; their log was not seen.
+- **The trader screen at 32:9** (1.1.1, a player's log, Forge issue #3). At 5120x1440
+  EFT draws the trader screen as a 1920 px block in the middle of the monitor, not full
+  width as at 21:9, so in 1.1.0 the stash got 11 of 39 columns and scrolled sideways.
+  With 1.1.1 the log shows `stretched: the trader screen was a 1920 px frame in a 3840 px
+  canvas`, the stash panel 642 → 2472 px with all 39 columns (`CHECK ... fits, 4.0 px
+  spare`), the deal column slid 874 px, and every re-check fitting over trader clicks,
+  Buy / Sell and returns from the character screen, which showed 39 columns too. The
+  add-offer window fitted 39 columns in the same player's 1.1.0 log. Seen alongside
+  Kaeno's Trader Scrolling.
 
 **Not yet verified**, in rough order of risk:
 
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
-- **The trader screen at 32:9** (1.1.1). A player's 1.1.0 log (Forge issue #3) showed
-  that at 5120x1440 EFT draws the trader screen as a 1920 px block in the middle of the
-  monitor, not full width as at 21:9, so the stash got 11 of 39 columns and scrolled
-  sideways. 1.1.1 widens that block to the full screen first. Worked out from that log
-  and unit-tested, not yet run. The add-offer window was fine in the same log: 39
-  columns, `fits, 4.0 px spare`.
 - **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
   been seen in a live log.
 - **The scav loot transfer and hideout area transfer screens** (1.0.3). They use the same
