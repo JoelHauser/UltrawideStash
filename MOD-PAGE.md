@@ -1,13 +1,14 @@
 <!--
   The mod-page description, kept here so it is version-controlled alongside the code
-  it describes. Paste the whole thing into the listing.
+  it describes. Paste everything below this comment into the listing.
 
   This is NOT the README. README.md is for anyone reading the repository and goes into
-  the reasoning; this is for someone deciding whether to download it. When a release
-  changes what a player sees, change both.
+  the reasoning; this is for someone deciding whether to download it. Keep it to what a
+  player needs today: no version history, no internals. When a release changes what a
+  player sees, change both.
 
   The Forge shows the word "Tarkov" as "T*****", so say "EFT" instead. The page also
-  came through without the screen table once, so the screens are a plain list.
+  came through without a table once, so use plain lists.
 
   Before posting: drop a screenshot in where the comment says, and fill the page's
   short-description field with --
@@ -17,112 +18,60 @@
 
 # ⚠️ ULTRAWIDE MONITORS ONLY
 
-**On a 16:9 monitor this does nothing.** EFT scales its menu by height, so 1080p,
-1440p and 4K all get the same width to work with and none of it is spare. 16:10 too.
-You need a screen wider than 16:9 for there to be any room to fill.
+On a 16:9 monitor (1080p, 1440p, 4K) this does nothing. EFT's menu has no spare width
+there to fill.
 
 ---
 
-Your stash is 10 columns wide, and on an ultrawide there are a few hundred pixels sitting
-empty beside it. This widens the stash panel and fills them. On 3440x1440 that's
-**10x68 → 19x36** — same capacity, half the scrolling.
+Widens your stash to fill the empty space beside it on an ultrawide. Same capacity, less
+scrolling: on 3440x1440 a 10x68 stash becomes **19x36**.
 
 <!-- screenshot goes here -->
 
-**What you get:**
-
-- **16:9** (1920x1080, 2560x1440, 3840x2160) — 10 columns, nothing changes
-- **21:9** (2560x1080, 3440x1440) — 19 columns
-- **32:9** (5120x1440) — 39 columns
+- **21:9** (2560x1080, 3440x1440): 19 columns
+- **32:9** (5120x1440): 39 columns
 
 ## ⚠️ Back up your profile first
 
-Changing the shape of your stash means moving items, so **this mod rewrites your profile
-file**. It takes a backup before every change (your original plus the two most recent,
-kept in `%LOCALAPPDATA%\UltrawideStash\backups` so they stay out of your profiles folder)
-and hands the result to SPT to save — but it's a young mod, and anything that rewrites a profile
-can damage one. **Copy `SPT_Runtime/user/profiles` somewhere safe before your first
-start.**
-
-Nothing in the mod deletes an item, so the expected worst case is a misplaced item rather
-than a missing one. Expected, not guaranteed.
+The mod moves items to fit the new stash shape, so it rewrites your profile. It keeps
+its own backups in `%LOCALAPPDATA%\UltrawideStash\backups`, but copy
+`SPT_Runtime/user/profiles` somewhere safe before your first start anyway.
 
 ## Install
 
-Unzip over your SPT folder. No setup, no config needed. **Start the server before the
-game**, as usual.
+Unzip over your SPT folder. No setup needed.
 
-Removing it later takes one extra step — see [Uninstalling](#uninstalling).
+## Features
 
-## Good to know
-
-- **Same capacity by default** — wider and shorter, not extra storage. Set
-  `compensateRows: false` in the config to keep every row.
+- **Wide everywhere in the menu:** the character screen, traders, the flea market's
+  add-offer window, the scav loot transfer, mail and hideout transfers. Buttons are never
+  covered.
+- **Never in raid:** your inventory in raid stays vanilla.
 - **Every edition**, hideout stash upgrades included.
-- Items that no longer fit get packed back in; items that already fit are never shuffled
-  — including anything in extra rows from a stash-rows bonus.
-- Sizes itself to your screen. You can set `columns` by hand in
-  `ultrawidestash.config.json`, capped at what your monitor can show.
-- **Wide at the traders and on the flea market** (new in 1.1.0) — on the trader screen
-  the stash grows left and the Buy / Sell column moves over to make room. When you list
-  an item on the flea market, the add-offer window gets wider so your whole stash shows.
-- **Wide on the transfer screens too** — the scav loot transfer after a raid, receiving
-  items from mail, and putting items into a hideout area. The stash grows into the empty
-  space beside the screen and **never covers the buttons** (Next, Sell All, Receive All
-  and the rest). The scav screen shows all 19 columns at 3440x1440 from 1.1.2; earlier
-  versions stopped at 15. Turn these, the traders and the flea window off with
-  `WidenTransferScreens` in the BepInEx config.
-- **Playing with friends (Fika)?** From 1.1.3 the width is per player: an ultrawide
-  player gets a wide stash and a 16:9 friend keeps the normal one, even on the same
-  server. Everyone needs the 1.1.3 client plugin, and it takes effect when each player
-  next starts the game. Up to 1.1.2 everyone got the host's width.
-- **Modded weapons are packed at their full size** (fixed in 1.1.3). Earlier versions
-  could move a weapon with attachments partly off the edge of the stash.
-- **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
-  crates, bodies and loot panels are left alone. The stash widens again when you're back
-  in the menu.
-- **Stuck at 10 columns?** Look in the **server** log. If the game couldn't widen the
-  stash, it says why there. The usual cause is EFT itself set to a 16:9 resolution on a
-  wider monitor. Set EFT's resolution in *Settings → Graphics* to your monitor's own.
-- **Stash narrower than your screen, or scrolling sideways?** Check `GearPanelReserve`
-  in `BepInEx/config/com.mybutthasarash.ultrawidestash.cfg` is **620**. A higher number
-  leaves the stash less room: at 1000 a 32:9 screen gets 27 columns instead of 39. The
-  server log warns you when it's changed.
+- **Fika:** each player's stash fits their own screen, so 16:9 friends keep the normal
+  stash. Every player needs the mod's client plugin.
+- **Sizes itself to your screen.** To set it by hand, change `columns` in
+  `ultrawidestash.config.json`. Set `compensateRows: false` to keep every row and get
+  extra storage instead of the same capacity.
 
-# Uninstalling — set `columns` to 10 first
+## Troubleshooting
 
-1. In `ultrawidestash.config.json`, set `"columns": 10` — the number, not `"auto"`.
-2. **Start the server once** and let it finish loading. It packs everything back into a
-   vanilla stash, backing up your profile first.
-3. Delete the files — and, once you're happy with your stash, the backups folder at
-   `%LOCALAPPDATA%\UltrawideStash`.
+- **Stuck at 10 columns?** The server log says why. Usually EFT is set to a 16:9
+  resolution: set it to your monitor's own in *Settings → Graphics*.
+- **Scrolling sideways?** Check `GearPanelReserve` is **620** in
+  `BepInEx/config/com.mybutthasarash.ultrawidestash.cfg`.
 
-**If you just delete it instead**, your stash snaps back to 10 columns and the game moves
-anything in columns 11+ to your **sorting table** — check there first. Anything it misses
-is still in your profile at its old coordinates; SPT never prunes out-of-bounds items.
-Reinstall and follow the three steps, or run the included `repair-stash.ps1` (plain
-PowerShell, no mod needed, shows you what it would do before writing).
+## Uninstalling
+
+1. Set `"columns": 10` in `ultrawidestash.config.json` (the number, not `"auto"`).
+2. Start the server once. It packs everything back into a vanilla stash.
+3. Delete the mod's files.
+
+If you deleted it without doing this, items past column 10 may be in your sorting
+table. Reinstall and follow the steps, or run the included `repair-stash.ps1`.
 
 ## Compatibility
 
-Fine with auto-sort, **UI Fixes**, **Advanced Stash Sorting** and **Loot In Vicinity**
-(the mod stays out of raid, so its Nearby Items panel is untouched).
-
-**Fika** works from 1.1.3, with each player's stash sized to their own screen. Tested on
-the server side; a full Fika session hasn't been reported yet.
-
-**SVM (Server Value Modifier)** works too. If you've given your stash more rows with SVM,
-those rows are kept. With the default settings your stash gets wider and shorter but
-holds the same number of cells SVM gave it. Set `compensateRows: false` to keep SVM's
-rows and get the extra width as well.
-
-**UIScale.Reloaded** works too, but you no longer need it. Before 1.0.5 this mod only
-widened the stash if UIScale.Reloaded was installed as well. Without it, EFT keeps the
-inventory screen as a 16:9 block in the middle of the monitor, and the stash stayed at
-10 columns. 1.0.5 widens that block to the full screen itself.
-
-For **SPT 4.1.x**. Tested on 4.1.6 at 3440x1440, with UIScale.Reloaded and without it,
-and **by a player on a real 5120x1440 (32:9) monitor**: the character screen, the
-trader screen (fixed in 1.1.1; 1.1.0 only managed 11 of 39 columns there) and the flea
-window all show the full 39 columns. Works alongside Kaeno's Trader Scrolling.
-2560x1080 hasn't been reported yet. If you play at it, please say how it looks.
+For **SPT 4.1.x**. Works with auto-sort, UI Fixes, Advanced Stash Sorting, Loot In
+Vicinity, SVM (your extra rows are kept), UIScale.Reloaded (not needed) and Kaeno's
+Trader Scrolling.
