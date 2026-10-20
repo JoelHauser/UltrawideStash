@@ -72,6 +72,12 @@ Removing it later takes one extra step — see [Uninstalling](#uninstalling).
   and the rest). The scav screen shows all 19 columns at 3440x1440 from 1.1.2; earlier
   versions stopped at 15. Turn these, the traders and the flea window off with
   `WidenTransferScreens` in the BepInEx config.
+- **Playing with friends (Fika)?** From 1.1.3 the width is per player: an ultrawide
+  player gets a wide stash and a 16:9 friend keeps the normal one, even on the same
+  server. Everyone needs the 1.1.3 client plugin, and it takes effect when each player
+  next starts the game. Up to 1.1.2 everyone got the host's width.
+- **Modded weapons are packed at their full size** (fixed in 1.1.3). Earlier versions
+  could move a weapon with attachments partly off the edge of the stash.
 - **Menu only — never in raid.** Your inventory in raid looks exactly like vanilla:
   crates, bodies and loot panels are left alone. The stash widens again when you're back
   in the menu.
@@ -101,6 +107,9 @@ PowerShell, no mod needed, shows you what it would do before writing).
 
 Fine with auto-sort, **UI Fixes**, **Advanced Stash Sorting** and **Loot In Vicinity**
 (the mod stays out of raid, so its Nearby Items panel is untouched).
+
+**Fika** works from 1.1.3, with each player's stash sized to their own screen. Tested on
+the server side; a full Fika session hasn't been reported yet.
 
 **SVM (Server Value Modifier)** works too. If you've given your stash more rows with SVM,
 those rows are kept. With the default settings your stash gets wider and shorter but

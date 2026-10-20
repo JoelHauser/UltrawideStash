@@ -20,6 +20,11 @@ trader screen, and in the add-offer window you list items from. Up to 1.0.5 both
 the 10-column panel, so a wide stash scrolled sideways at a trader and was cut off when
 listing an item. See [Traders and the flea market](#traders-and-the-flea-market-110).
 
+**From 1.1.3 the width is per player** — for several people on one server, as with Fika.
+Each player's game tells the server its own screen, so an ultrawide player gets a wide
+stash and a 16:9 player keeps the vanilla one. Up to 1.1.2 every player on a server got
+the width for the host's screen. See [Fika](#fika--the-width-is-per-player-since-113).
+
 **On a 16:9 monitor this mod does nothing, and that is deliberate.** 1080p, 1440p and 4K
 all get exactly the same canvas width and none of them have room to spare — see
 [Why there is room to fill](#why-there-is-room-to-fill). On a wider screen it works out
@@ -403,6 +408,39 @@ and it widens UIScale's layout as before. UIScale applies its stretch a few fram
 the screen opens. If that lands after the widening, the probe notices, logs it and
 widens again.
 
+### Fika — the width is per player since 1.1.3
+
+Under Fika everyone plays on the host's SPT server. Up to 1.1.2 the stash width was one
+number for the whole server, chosen from the host's screen, so a 16:9 friend of a 21:9
+host got the host's 19 columns and a sideways scrollbar (Forge issue #4). A friend's own
+probe could not help: it wrote its measurement into the server folder on the friend's
+PC, which the host's server never reads.
+
+From 1.1.3:
+
+- **Each player's game reports in** to the server it plays on: its screen and the two
+  layout settings when the game starts, and its measurement when it takes one. The server
+  keeps one small file per player in `SPT_Runtime/user/mods/UltrawideStash/players/`.
+- **A player whose screen gives the same width as the server's** shares the server-wide
+  stash, exactly as before.
+- **A player whose screen gives a different width** is sent their own copy of the stash
+  templates, and SPT's own item placement (trader purchases, mail, rewards) uses their
+  size, so nothing is put in a column their game does not have.
+- **When a player's width changes**, only their stash is repacked, when their game
+  starts, backed up first like every other repack.
+- **A player whose game has never run the 1.1.3 plugin** keeps the server-wide width. So
+  every player needs `UltrawideStash.Probe.dll` 1.1.3, and the host needs the server half.
+  Nothing changes for anyone until they start their game once after updating.
+
+The host's server log has one line per player saying what they got and why, for example
+`[UltrawideStash] Friend: stash: 10 columns, was 19 (10x68 Edge of Darkness, 94 item(s)
+moved to fit) -- auto: 10 columns, estimated from a 1920x1080 screen`. Each player's own
+`BepInEx/LogOutput.log` has the server's answer on the line starting `this game's screen
+is`.
+
+The config's `columns` and `ignoreMeasurement` still apply to everyone; `columns` is
+capped at each player's own screen.
+
 ### Stash Management Helper — listed, not audited
 
 The probe names it (`com.markosz.stashmanagementhelper`) if it is loaded, because knowing
@@ -478,6 +516,9 @@ the new positions into the profile.
   stranded move.
 - It packs biggest-first into the first free space, so the result looks like something
   the game's own sort would have produced.
+- Items are sized the way SPT sizes them: **a weapon with its attachments on**. Before
+  1.1.3 the repack used each item's bare size, so a modded weapon it moved could end up
+  partly outside the grid or over another item.
 - If the stash genuinely cannot hold everything, the excess goes to the **Sorting
   Table**, which stretches downward without limit and which this mod never touches. So
   "your stash is too full to go back to vanilla" is not a dead end.
@@ -560,15 +601,17 @@ server. You do not have to do anything for this — it happens every time you op
 character screen — but this is how to read it when something looks wrong.
 
 1. Install both halves. Leave `columns` at `"auto"`.
-2. Launch, open the character screen, and let it sit for a second. The probe writes
-   `ultrawidestash.measured.json` into the server mod's folder.
-3. On the next server start `"auto"` uses the measured number. On a first install the
-   server has usually predicted the same number already, so nothing changes.
+2. Launch, open the character screen, and let it sit for a second. The probe sends the
+   measurement to the server (1.1.3) and writes `ultrawidestash.measured.json` into the
+   server mod's folder on this PC.
+3. From your next game start `"auto"` uses the measured number for you. On a first
+   install the server has usually predicted the same number already, so nothing changes.
 4. For the detail, find `BepInEx\LogOutput.log` and grep for `[UltrawideStash]`.
 
-A measurement only takes effect on the **next** server start — the grid you are looking
-at was built from the template the server already served. Nothing tries to resize a
-stash that is on screen.
+A measurement only takes effect from the **next** game start — the grid you are looking
+at was built from the templates the server already sent. Nothing tries to resize a
+stash that is on screen. The file in the server mod's folder is only read at a server
+start, for players whose game has never reported in (see [Fika](#fika--the-width-is-per-player-since-113)).
 
 If the two halves are on different machines, or you are not running the probe, there is
 no measurement and `"auto"` falls back to the estimate from `screenWidth`/`screenHeight`.
@@ -673,7 +716,7 @@ install, launched or not, and `pack.ps1` asserts the DLL carries no `Assembly-CS
 ## Status
 
 Built against SPT 4.1.5 / EFT 0.16.9.5.40743 / BepInEx 5.4.23.5, and played on SPT 4.1.6.
-Clean at 0 warnings; 277 logic tests and 19 database checks pass. The probe carries no
+Clean at 0 warnings; 302 logic tests and 19 database checks pass. The probe carries no
 `Assembly-CSharp` or `spt-*` reference and `pack.ps1` asserts it.
 
 Compatibility with auto-sort, Advanced Stash Sorting and UI Fixes was established by
@@ -729,7 +772,20 @@ Compatibility.
   add-offer window fitted 39 columns in the same player's 1.1.0 log. Seen alongside
   Kaeno's Trader Scrolling.
 
+- **The width per player, on the server** (1.1.3) — on SPT 4.1.6, a test profile told
+  the server it was on a 1920x1080 screen (the request sent by hand, as the plugin sends
+  it). It was then sent 10-wide stashes on every hideout level while another profile on
+  the same server kept 19, its items were packed into 10x68, and a trader purchase landed
+  inside its 10 columns. Switched back to 3440x1440 it got 19x36 again, and a server
+  restart kept each profile on its own width. No out-of-bounds errors. This is also where
+  the attachment-sizing bug was found and fixed.
+
 **Not yet verified**, in rough order of risk:
+
+- **The per-player width with the game and with Fika** (1.1.3). The game's report has to
+  reach the server before the game asks it for the stash; the server log shows the order
+  (the player's `stash:` line, then `serving their own stash` for a player with their own
+  width). The measurement being sent to the server has not been seen live either.
 
 - **A physical 21:9 monitor other than 3440x1440** (2560x1080, 3840x1600).
 - **The server reading `GearPanelReserve`** (1.0.5). Unit-tested; its warning has not
