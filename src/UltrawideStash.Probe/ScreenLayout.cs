@@ -320,7 +320,13 @@ namespace UltrawideStash.Probe
                 var newRight = panel.XMax + right;
                 var reach = newLeft - leftOverhang;
 
-                if (reach < behind)
+                // What stands behind the nearest is checked per train below: a train
+                // moves some of it. Checking it here first held the scav screen to 34
+                // of 39 columns at 32:9 on paper, the gear column counted as a wall
+                // while it was being pushed out of the way.
+                var sliding = left > 0f && nearest != null && reach < nearest.Box.XMax + Gap;
+
+                if (!sliding && reach < behind)
                 {
                     why = "no room on the left";
                     continue;
@@ -329,7 +335,7 @@ namespace UltrawideStash.Probe
                 var shift = 0f;
                 Train train = null;
 
-                if (left > 0f && nearest != null && reach < nearest.Box.XMax + Gap)
+                if (sliding)
                 {
                     shift = nearest.Box.XMax + Gap - reach;
 

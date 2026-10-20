@@ -1656,3 +1656,49 @@ in the screenshot) would meet the bottom of ButtonsPanel's box after ~130 px. Th
 suspected cause, **not confirmed**. `ScreenLayout.Piece` now clips each piece to its
 panel and skips slivers (< 16 px wide or < 4 px tall). A refusal names the piece:
 `would put 'ButtonsPanel' over '<path>' (x .., y ..) in it`.
+
+## Per-player width, for Fika (1.1.3)
+
+Forge issue #4 (FlachkopfLarry, 1.1.1, Fika, no logs): a 21:9 host's 16:9 friends got
+the host's width and a sideways scrollbar. Up to 1.1.2 the width was `cellsH` on the five
+shared stash templates, chosen from the host's own screen; a friend's probe wrote its
+measurement into the server folder on the friend's PC, which nobody read.
+
+- **Probe -> server, per session** (`ServerLink`, SPT's `RequestHandler` by reflection):
+  `/ultrawidestash/hello` from Awake (screen = `Screen.width x height`, WidenStashPanel,
+  GearPanelReserve, version), and `/ultrawidestash/measured` (fire and forget) whenever
+  `MeasurementFile.Write` runs. The local measured.json is still written.
+- **Server**: one `players/<profileId>.json` (`PlayerRecord`) per player. `PlayerRecord.ChoiceFor`
+  = `ColumnChoice.For` with that player's screen, settings and measurement (only if taken on
+  the same screen and by probe >= 1.0.5). Config `columns`/`ignoreMeasurement` apply to all.
+- A player whose width equals the server-wide one **shares the database plan** (unchanged
+  behaviour, and the DB floors are computed only over these players). A player whose width
+  differs gets **own shapes** (`StashShapes.For`, from their own stash: their rung compensated
+  + ShallowestThatFits, rungs above no shallower, rungs below from nothing), served by
+  `ServeStashPatch` (prefix on `DataCallbacks.GetTemplateItems`, cloned templates) and sized
+  by `StashSizePatch` (postfix on `InventoryHelper.GetPlayerStashSize`, keeps SPT's bonus rows).
+  Both patches go on before anything is repacked to an own width; if either fails, nobody
+  gets one.
+- **When it changes**: at the hello (game start), repacked in the loaded profile then
+  (`PlayerStashes.Replan`), or at server start from the record. A profile with no record
+  keeps the server-wide width, so updating changes nothing until each game starts once.
+- `GetTemplateItems` returns `ValueTask<string>` in the 4.1.2 package and
+  `ValueTask<StreamedJsonBody>` in 4.1.6 (no such type in 4.1.2): the prefix builds the
+  running server's type by reflection and returns it via `ref object __result` (verified
+  that HarmonyX boxes value-type results).
+
+**Repack sizing bug, found in the live test and fixed:** `ProfileStore.Parse` sized items by
+template only, so a modded MP5 (6 wide with attachments) was moved to x 5 of a 10-wide
+stash and SPT logged `[OOB]`. Loaded profiles are now sized with SPT's own
+`InventoryHelper.GetItemSize` (`PlayerStashes.Contents`). Affects every earlier version's
+repacks of modded weapons. Overlaps an older repack may already have left inside the grid
+are not detected or repaired (the repack only checks bounds).
+
+**Verified live 2026-10-20 (server only, no game):** PITTEST as a fake 16:9 friend via a
+hand-sent hello: served 10x30/40/50/68/72 while SCOOP stayed 19x16..19x38; repacked 94
+items into 10x68; a Prapor purchase landed at x 0 y 42; back to 3440x1440 -> 19x36, 56
+moved, purchase at x 17; zero `[OOB]`; a restart kept PITTEST at its own 10. PITTEST and its
+record were restored from backup afterwards (hashes match). **Not yet run with the game:**
+whether the hello from Awake really arrives before `/client/items` (the server logs
+"serving their own stash" on the items request, after the hello line), and the
+measurement POST. No real Fika session tried. 302 tests.

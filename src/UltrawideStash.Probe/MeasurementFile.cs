@@ -60,31 +60,35 @@ namespace UltrawideStash.Probe
             bool canWiden,
             string whyNot)
         {
+            var json = Json(
+                maxColumns, screenWidth, screenHeight, canvasWidth, panelWidth,
+                canWiden, whyNot);
+
+            // To the server this game plays on, for this player alone. The file below is
+            // only read by a server on this PC, and only for players whose game has never
+            // reported in. See ServerLink.
+            ServerLink.Measured(json, ProbePlugin.Note);
+
             try
             {
                 var folder = ServerModFolder();
 
                 if (folder == null)
                 {
-                    return "could not find the server mod folder, so the measurement was not "
-                           + "written. Set \"columns\" by hand, or check the server half is "
-                           + "installed under SPT_Runtime\\user\\mods\\UltrawideStash.";
+                    return "measurement sent to the server; no folder on this PC to keep a copy in.";
                 }
 
                 var path = Path.Combine(folder, FileName);
 
-                File.WriteAllText(path, Json(
-                    maxColumns, screenWidth, screenHeight, canvasWidth, panelWidth,
-                    canWiden, whyNot),
-                    new UTF8Encoding(false));
+                File.WriteAllText(path, json, new UTF8Encoding(false));
 
-                return "measurement written to " + path
-                       + " -- restart the SPT server and \"columns\": \"auto\" will use it.";
+                return "measurement sent to the server and kept in " + path
+                       + " -- the stash takes it from the next game start.";
             }
             catch (Exception e)
             {
-                return "could not write the measurement (" + e.Message
-                       + "). Nothing is broken; the server will keep using its own estimate.";
+                return "measurement sent to the server, but the copy on this PC could not be "
+                       + "written (" + e.Message + ").";
             }
         }
 

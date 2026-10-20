@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Reflection;
 using BepInEx;
@@ -37,7 +37,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.1.2";
+        public const string PluginVersion = "1.1.3";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -117,6 +117,12 @@ namespace UltrawideStash.Probe
             ScreenWiden.Enabled = _widenTransfers.Value;
 
             GameTypes.Resolve();
+
+            // This player's screen, to the server this game plays on, before the game
+            // asks it for the stash -- see ServerLink. A probe that cannot find the
+            // game's UI widens nothing, so it says so.
+            Say("this game's screen is " + ServerLink.Screen(Screen.width, Screen.height) + "; "
+                + ServerLink.Hello(Screen.width, Screen.height, _widen.Value && GameTypes.Ready, _reserve.Value));
 
             if (!GameTypes.Ready)
             {
@@ -500,6 +506,9 @@ namespace UltrawideStash.Probe
         /// Write one multi-line block, prefixing every line so it survives being
         /// read in a log alongside everything else.
         /// </summary>
+        /// <summary><see cref="Say"/>, for the rest of the plugin.</summary>
+        internal static void Note(string message) => Say(message);
+
         private static void Say(string message)
         {
             if (_log == null) return;

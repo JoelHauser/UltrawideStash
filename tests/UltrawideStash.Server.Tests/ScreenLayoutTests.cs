@@ -329,6 +329,26 @@ public class ScreenLayoutTests
         }
     }
 
+    /// <summary>
+    /// 5120x1440 on paper: a 3840 canvas, and the scav screen assumed to keep the
+    /// 21:9 shape round the centre (it is a 16:9 frame there already). Not run.
+    /// </summary>
+    [Fact]
+    public void TheScavScreenAt32By9GetsAllThirtyNineColumnsOnPaper()
+    {
+        var obstacles = LiveScav();
+        obstacles[1].Inner = new[] { new Box(-276f, -402f, -151f, -293f) };
+
+        var plan = ScreenLayout.Plan(Canvas32By9, LiveScavPanel, obstacles, 39, Chrome);
+        var final = Final(plan, LiveScavPanel);
+
+        Assert.True(plan.Columns == 39, plan.Why);
+        Assert.Equal(new[] { obstacles[0] }, plan.Pushed);
+        Assert.True(obstacles[4].Box.Shifted(-plan.Shift).XMin >= Canvas32By9.XMin + ScreenLayout.EdgeMargin);
+        Assert.False(final.Overlaps(ScavButtons().Box));
+        Assert.False(final.Overlaps(ScavSellAll().Box));
+    }
+
     [Fact]
     public void AnImmovableGearColumnStopsThePushShortOfNineteen()
     {
@@ -487,15 +507,37 @@ public class ScreenLayoutTests
 
     /// <summary>
     /// The bug as reported, unstretched: one neighbour slid into its own margin, and
-    /// the 960 px either side of the frame out of reach.
+    /// the 960 px either side of the frame out of reach. The showcase is held still
+    /// here to reproduce 1.1.0's one-neighbour planner.
     /// </summary>
     [Fact]
-    public void TheUnstretchedTraderFrameAt32By9CannotHoldThirtyNineColumns()
+    public void TheUnstretchedTraderFrameAt32By9CannotHoldThirtyNineColumnsWithOneNeighbour()
     {
+        var showcase = LiveShowcase();
+        showcase.Movable = false;
+
         var plan = ScreenLayout.Plan(
-            Canvas32By9, LiveTraderPanel(), new List<Obstacle> { LiveControl(), LiveBarter(), LiveShowcase() }, 39, 10f, 38f);
+            Canvas32By9, LiveTraderPanel(), new List<Obstacle> { LiveControl(), LiveBarter(), showcase }, 39, 10f, 38f);
 
         Assert.True(plan.Columns < 39);
+    }
+
+    /// <summary>
+    /// The planner can now push the showcase ahead of the deal column, which reaches
+    /// the margin unstretched too. In game the stretch runs first, and after it the
+    /// deal column alone is enough (the test below), so this path is not the live one.
+    /// </summary>
+    [Fact]
+    public void TheUnstretchedTraderFrameAt32By9ReachesThirtyNineByPushingTheShowcase()
+    {
+        var showcase = LiveShowcase();
+
+        var plan = ScreenLayout.Plan(
+            Canvas32By9, LiveTraderPanel(), new List<Obstacle> { LiveControl(), LiveBarter(), showcase }, 39, 10f, 38f);
+
+        Assert.Equal(39, plan.Columns);
+        Assert.Equal(new[] { showcase }, plan.Pushed);
+        Assert.True(showcase.Box.Shifted(-plan.Shift).XMin >= Canvas32By9.XMin + ScreenLayout.EdgeMargin);
     }
 
     /// <summary>

@@ -94,6 +94,23 @@ public static class ProfileStore
     /// </summary>
     public static StashContents? Parse(
         string json, string path, Func<string, (int Width, int Height)> sizeOf)
+        => Parse(json, path, (_, template) => sizeOf(template));
+
+    /// <summary>
+    /// <see cref="Parse(string, string, Func{string, ValueTuple{int, int}})"/> with each
+    /// item's size asked for by item id and template id together, so a weapon can be
+    /// sized with its attachments on.
+    ///
+    /// ## Why (fixed in 1.1.3)
+    ///
+    /// A weapon's footprint is not its template's: a stock, barrel or suppressor extends
+    /// it (the <c>ExtraSize*</c> properties of each attached part), and SPT's own
+    /// <c>InventoryHelper.GetItemSize</c> adds them up. Sizing by template alone, the
+    /// repack put a modded MP5 -- 6 cells wide with its parts, fewer bare -- at x 5 of a
+    /// 10-wide stash, half outside it, and SPT logged it [OOB] on every stash write.
+    /// </summary>
+    public static StashContents? Parse(
+        string json, string path, Func<string, string, (int Width, int Height)> sizeOf)
     {
         var root = JsonNode.Parse(json);
 
@@ -140,7 +157,7 @@ public static class ProfileStore
 
             if (string.IsNullOrEmpty(id)) continue;
 
-            var size = sizeOf(node["_tpl"]?.GetValue<string>() ?? string.Empty);
+            var size = sizeOf(id!, node["_tpl"]?.GetValue<string>() ?? string.Empty);
 
             var placement = new StashRepack.Placement(
                 id!,

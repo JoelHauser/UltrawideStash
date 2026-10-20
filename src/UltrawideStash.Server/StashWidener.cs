@@ -58,7 +58,8 @@ public class StashWidener(
     ISptLogger<StashWidener> logger,
     TemplateTable templates,
     SaveServer saveServer,
-    JsonUtil jsonUtil)
+    PlayerStashes players,
+    HttpResponseUtil httpResponseUtil)
     : IOnLoad
 {
     /// <summary>Where this install's profile backups go -- see <see cref="BackupStore"/>.</summary>
@@ -68,7 +69,7 @@ public class StashWidener(
     {
         var folder = ModFolder();
 
-        backupDirectory = BackupStore.DirectoryFor(ProfileDirectory());
+        backupDirectory = BackupStore.DirectoryFor(ProfileDirectory(saveServer));
 
         var settings = StashSettings.Load(
             System.IO.Path.Combine(folder, "ultrawidestash.config.json"),
@@ -155,10 +156,51 @@ public class StashWidener(
             return;
         }
 
+        // Each rung's size before anything here changes it: what a player whose own
+        // screen gives a different width is planned from (see PlayerStashes).
+        var vanilla = new Dictionary<string, StashShapes.Shape>();
+
+        foreach (var (id, _) in StashLadder.Rungs)
+        {
+            if (!templates.Items.TryGetValue(new MongoId(id), out var t)) continue;
+
+            var g = PlayerStashes.FirstGrid(t)?.Properties;
+
+            if (g?.CellsH is > 0 && g.CellsV is > 0) vanilla[id] = new StashShapes.Shape(g.CellsH.Value, g.CellsV.Value);
+        }
+
+        players.Begin(vanilla, settings, choice.Columns, folder, backupDirectory);
+
+        // Before anything is repacked to a player's own width: if SPT cannot be patched
+        // to serve and size it, nobody gets one.
+        var perPlayer = EnablePlayerPatches();
+
+        // Which players get a width of their own: those whose game has reported a screen
+        // (PlayerRecord) that gives a different number from the server-wide one. Everyone
+        // else shares the template plan below, exactly as before 1.1.3.
+        var own = new List<(ProfileStore.StashContents Profile, ColumnChoice.Choice Choice, string Reason)>();
+        var shared = new List<ProfileStore.StashContents>();
+
+        foreach (var profile in profiles)
+        {
+            var mine = players.ChoiceFor(players.RecordFor(ProfileId(profile)), out var reason);
+
+            if (perPlayer && mine is not null && mine.Value.Columns != choice.Columns
+                && StashLadder.PositionOf(profile.StashTemplateId) >= 0)
+            {
+                own.Add((profile, mine.Value, reason));
+            }
+            else
+            {
+                shared.Add(profile);
+            }
+        }
+
         // The row floor for each rung of the hideout's stash ladder. A Standard player
         // climbs these templates as they upgrade the Stash area, so a rung must never
-        // be planned shorter than the rung below it -- see StashLadder.
-        var floors = StashLadder.RowFloors(DeepestByTemplate(profiles));
+        // be planned shorter than the rung below it -- see StashLadder. Only the players
+        // on this plan count: a 16:9 friend's deep 10-wide stash must not deepen it.
+        var floors = StashLadder.RowFloors(DeepestByTemplate(shared));
 
         var applied = 0;
         var moved = 0;
@@ -170,7 +212,7 @@ public class StashWidener(
         {
             if (!templates.Items.TryGetValue(new MongoId(id), out var template)) continue;
 
-            var grid = FirstGrid(template);
+            var grid = PlayerStashes.FirstGrid(template);
 
             if (grid?.Properties is null) continue;
 
@@ -179,7 +221,7 @@ public class StashWidener(
 
             if (vanillaColumns <= 0 || vanillaRows <= 0) continue;
 
-            var mine = profiles.Where(p => p.StashTemplateId == id).ToList();
+            var mine = shared.Where(p => p.StashTemplateId == id).ToList();
 
             var floor = floors.TryGetValue(id, out var f) ? f : DeepestRow(mine);
 
@@ -204,7 +246,7 @@ public class StashWidener(
 
             if (wanted.Applied && settings.CompensateRows)
             {
-                settledFloor = ShallowestThatFits(mine, wanted.Columns, wanted.Rows, floor);
+                settledFloor = StashShapes.ShallowestThatFits(mine, wanted.Columns, wanted.Rows, floor);
             }
 
             var plan = StashLayout.For(
@@ -216,7 +258,7 @@ public class StashWidener(
             var finalColumns = plan.Applied ? plan.Columns : vanillaColumns;
             var finalRows = plan.Applied ? plan.Rows : vanillaRows;
 
-            if (!Relocate(mine, finalColumns, finalRows, edition, toSave, ref moved))
+            if (!players.Relocate(mine, finalColumns, finalRows, edition, toSave, ref moved))
             {
                 logger.Error(
                     $"[UltrawideStash] {edition} stash left at {vanillaColumns}x{vanillaRows}: "
@@ -244,6 +286,40 @@ public class StashWidener(
             }
         }
 
+        foreach (var profile in shared) players.Share(ProfileId(profile), choice.Columns);
+
+        // The players on a width of their own: each planned and repacked from their own
+        // stash, served their own templates. A stash that will not fit stays on the
+        // server-wide plan, as it was.
+        foreach (var (profile, mine, reason) in own)
+        {
+            var shapes = StashShapes.For(profile, vanilla, mine.Columns, settings.CompensateRows);
+            var shape = shapes[profile.StashTemplateId];
+            var edition = StashLadder.Rungs[StashLadder.PositionOf(profile.StashTemplateId)].Edition;
+            var name = NameOf(profile);
+
+            if (!players.Relocate([profile], shape.Columns, shape.Rows, edition, toSave, ref moved))
+            {
+                // Onto the server-wide plan instead, which was made without this stash.
+                var fallback = PlayerStashes.FirstGrid(templates.Items[new MongoId(profile.StashTemplateId)])!.Properties!;
+                var fits = players.Relocate(
+                    [profile], fallback.CellsH ?? 0, fallback.CellsV ?? 0, edition, toSave, ref moved);
+
+                logger.Error(
+                    $"[UltrawideStash] {name}: their stash would not fit {shape.Columns}x{shape.Rows}, "
+                    + $"so they keep the server-wide {choice.Columns} columns"
+                    + (fits ? "." : ", and it would not fit that either. Nothing in it was moved."));
+                players.Share(ProfileId(profile), choice.Columns);
+                continue;
+            }
+
+            players.Give(ProfileId(profile), mine.Columns, shapes);
+
+            logger.Info(
+                $"[UltrawideStash] {name}: {mine.Columns} columns of their own "
+                + $"({shape.Columns}x{shape.Rows} {edition}) -- {reason}.");
+        }
+
         // The moves are already in the loaded profiles, which is what the client is
         // served; this only puts them on disk now rather than at SPT's next save. A
         // failure here loses nothing -- that save will write them anyway.
@@ -261,11 +337,13 @@ public class StashWidener(
             }
         }
 
-        var shape = settings.CompensateRows ? "capacity held" : "rows kept";
+        if (perPlayer) players.Open();
+
+        var shapeNote = settings.CompensateRows ? "capacity held" : "rows kept";
 
         logger.Info(
             $"[UltrawideStash] {applied} stash template(s) at {choice.Columns} columns "
-            + $"({choice.PixelWidth}px), {shape}"
+            + $"({choice.PixelWidth}px), {shapeNote}"
             + (moved > 0 ? $"; {moved} item(s) relocated to stay reachable" : string.Empty)
             + $". ({note}; {measurementNote}.)");
 
@@ -351,127 +429,6 @@ public class StashWidener(
     }
 
     /// <summary>
-    /// Relocate anything that does not fit, writing the profile back.
-    ///
-    /// Returns false when some item has nowhere to go -- the caller then leaves that
-    /// stash alone entirely rather than applying a size that would hide something.
-    /// </summary>
-    private bool Relocate(
-        List<ProfileStore.StashContents> profiles,
-        int columns,
-        int rows,
-        string edition,
-        List<MongoId> toSave,
-        ref int moved)
-    {
-        // Plan every profile before writing any of them, so a stash that cannot be
-        // packed stops the whole thing rather than leaving some files already edited.
-        var planned = new List<(ProfileStore.StashContents Profile,
-            IReadOnlyList<StashRepack.Move> Moves,
-            IReadOnlyList<StashRepack.Transfer> Transfers)>();
-
-        foreach (var profile in profiles)
-        {
-            // Against this player's grid: the template's rows plus their own StashRows
-            // bonus. Planning without the bonus moved items the player had put in those
-            // rows on every start.
-            var profileRows = profile.RowsFor(rows);
-            var plan = StashRepack.For(profile.Items, columns, profileRows);
-
-            var transfers = new List<StashRepack.Transfer>();
-
-            if (plan.Homeless.Count > 0)
-            {
-                // The stash itself cannot hold everything. Rather than refusing and
-                // leaving the player stuck, overflow into the Sorting Table: it grows
-                // vertically without bound, this mod never touches it, and it is
-                // somewhere they will actually look.
-                if (string.IsNullOrEmpty(profile.SortingTableId))
-                {
-                    logger.Error(
-                        $"[UltrawideStash] {edition}: {plan.Homeless.Count} item(s) in "
-                        + $"'{System.IO.Path.GetFileName(profile.FilePath)}' do not fit "
-                        + $"{columns}x{profileRows} and that profile has no sorting table to put "
-                        + "them in. Free some space, or raise columns, and start again.");
-                    return false;
-                }
-
-                var byId = profile.Items.ToDictionary(i => i.ItemId);
-
-                var homeless = plan.Homeless
-                    .Where(byId.ContainsKey)
-                    .Select(id => byId[id])
-                    .ToList();
-
-                transfers = StashRepack.IntoSortingTable(
-                    homeless, profile.SortingTableItems, out var tooWide);
-
-                if (tooWide.Count > 0)
-                {
-                    logger.Error(
-                        $"[UltrawideStash] {edition}: {tooWide.Count} item(s) in "
-                        + $"'{System.IO.Path.GetFileName(profile.FilePath)}' fit neither "
-                        + $"{columns}x{profileRows} nor the sorting table. Nothing was changed.");
-                    return false;
-                }
-            }
-
-            if (plan.Moves.Count > 0 || transfers.Count > 0)
-            {
-                planned.Add((profile, plan.Moves, transfers));
-            }
-        }
-
-        foreach (var (profile, moves, transfers) in planned)
-        {
-            try
-            {
-                int written;
-                var loaded = LoadedProfile(profile.FilePath, out var id);
-
-                if (loaded?.CharacterData?.PmcData?.Inventory?.Items is { } items)
-                {
-                    // The copy the client is served and SPT will save. Backed up first,
-                    // exactly as the file path is, then moved in place.
-                    BackupStore.Backup(profile.FilePath, backupDirectory);
-
-                    written = ProfileStore.ApplyToItems(
-                        items, moves, profile.SortingTableId, transfers);
-
-                    if (written > 0) toSave.Add(id);
-                }
-                else
-                {
-                    written = ProfileStore.ApplyChanges(
-                        profile.FilePath, moves, profile.SortingTableId, transfers,
-                        backupDirectory);
-                }
-
-                moved += written;
-
-                var where = transfers.Count > 0
-                    ? $"{moves.Count} back inside the {edition} stash and {transfers.Count} "
-                      + "into the sorting table"
-                    : $"{written} back inside the {edition} stash";
-
-                logger.Info(
-                    $"[UltrawideStash] Moved {where} in "
-                    + $"'{System.IO.Path.GetFileName(profile.FilePath)}' (backed up first, to "
-                    + $"{backupDirectory}).");
-            }
-            catch (Exception e)
-            {
-                logger.Error(
-                    $"[UltrawideStash] Could not rewrite '{profile.FilePath}' ({e.Message}). "
-                    + "That profile is unchanged; the stash is being left alone.");
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
     /// The deepest occupied row on each stash template, keyed by template id.
     ///
     /// Feeds <see cref="StashLadder.RowFloors"/>, which turns it into the running
@@ -500,57 +457,6 @@ public class StashWidener(
         return deepest;
     }
 
-    /// <summary>
-    /// How many rows the deepest stored item needs across these profiles. Only a
-    /// fallback now -- <see cref="StashLadder.RowFloors"/> is what the loop uses --
-    /// kept for the case where a template is somehow not on the ladder.
-    /// </summary>
-    /// <summary>
-    /// The shallowest grid, from <paramref name="ideal"/> rows upward, that every
-    /// profile on this template can actually be repacked into.
-    ///
-    /// Returns <paramref name="ideal"/> when the compact grid holds everything, which
-    /// is the normal case: the cells do not go anywhere when a stash is reshaped, and
-    /// compensateRows keeps the count. It climbs only for a stash that genuinely
-    /// cannot be packed that tightly -- large items that will not tessellate, mostly
-    /// -- and stops at <paramref name="ceiling"/>, the pre-move depth, which always
-    /// fits because it is where the items already are.
-    /// </summary>
-    private static int ShallowestThatFits(
-        List<ProfileStore.StashContents> profiles,
-        int columns,
-        int ideal,
-        int ceiling)
-    {
-        if (ceiling <= ideal) return ideal;
-
-        for (var rows = ideal; rows < ceiling; rows++)
-        {
-            if (EverythingFits(profiles, columns, rows)) return rows;
-        }
-
-        return ceiling;
-    }
-
-    /// <summary>
-    /// Whether a repack into this grid leaves nothing homeless. A dry run: it plans
-    /// the moves and throws them away, writing nothing.
-    /// </summary>
-    private static bool EverythingFits(
-        List<ProfileStore.StashContents> profiles,
-        int columns,
-        int rows)
-    {
-        foreach (var profile in profiles)
-        {
-            var plan = StashRepack.For(profile.Items, columns, profile.RowsFor(rows));
-
-            if (!plan.Complete || plan.Homeless.Count > 0) return false;
-        }
-
-        return true;
-    }
-
     private static int DeepestRow(List<ProfileStore.StashContents> profiles)
     {
         var deepest = 0;
@@ -573,7 +479,7 @@ public class StashWidener(
     private List<ProfileStore.StashContents> ReadProfiles(out bool readable, out string why)
     {
         var found = new List<ProfileStore.StashContents>();
-        var directory = ProfileDirectory();
+        var directory = ProfileDirectory(saveServer);
 
         if (!Directory.Exists(directory))
         {
@@ -588,12 +494,11 @@ public class StashWidener(
             {
                 // The loaded copy when there is one: it is what the client will be
                 // served, and SPT may have migrated or cleaned it since reading the file.
-                var loaded = LoadedProfile(file, out _);
-                var json = loaded is null ? null : jsonUtil.Serialize(loaded);
+                var loaded = players.LoadedProfile(file, out _);
 
-                var contents = json is null
-                    ? ProfileStore.Read(file, SizeOf)
-                    : ProfileStore.Parse(json, file, SizeOf);
+                var contents = loaded is null
+                    ? ProfileStore.Read(file, players.SizeOf)
+                    : players.Contents(loaded, file);
 
                 if (contents is not null) found.Add(contents);
             }
@@ -611,26 +516,6 @@ public class StashWidener(
     }
 
     /// <summary>
-    /// The server's loaded copy of the profile stored in <paramref name="file"/>, or null
-    /// when it has none -- a file SPT skipped, or one it marked invalid, which it will
-    /// neither serve nor save. Profiles are named for their id.
-    /// </summary>
-    private SptProfile? LoadedProfile(string file, out MongoId id)
-    {
-        id = default;
-
-        var name = System.IO.Path.GetFileNameWithoutExtension(file);
-
-        if (!MongoId.IsValidMongoId(name)) return null;
-
-        id = new MongoId(name);
-
-        if (!saveServer.ProfileExists(id) || saveServer.IsProfileInvalidOrUnloadable(id)) return null;
-
-        return saveServer.GetProfile(id);
-    }
-
-    /// <summary>
     /// Every profile's backups out of the profiles folder and down to its original plus
     /// the newest few -- see <see cref="BackupStore"/>. Run on every start, not only when
     /// something is moved, so what older versions left behind is cleared even on a
@@ -645,7 +530,7 @@ public class StashWidener(
         try
         {
             // Every profile with backups, deleted ones included -- see BackupStore.TidyAll.
-            var tidied = BackupStore.TidyAll(ProfileDirectory(), backupDirectory);
+            var tidied = BackupStore.TidyAll(ProfileDirectory(saveServer), backupDirectory);
 
             moved = tidied.Moved;
             deleted = tidied.Deleted;
@@ -678,7 +563,7 @@ public class StashWidener(
     /// where it can be read, else the literal <c>user/profiles</c> that
     /// <c>SaveServer.RemoveProfile</c> uses, relative to the server's directory.
     /// </summary>
-    private string ProfileDirectory()
+    public static string ProfileDirectory(SaveServer saveServer)
     {
         try
         {
@@ -806,36 +691,64 @@ public class StashWidener(
                + "the full width.";
     }
 
+    /// <summary>A profile's id: SPT names each profile file for it.</summary>
+    private static string ProfileId(ProfileStore.StashContents profile)
+        => System.IO.Path.GetFileNameWithoutExtension(profile.FilePath);
+
+    /// <summary>The player's nickname for the log, else the profile's file name.</summary>
+    private string NameOf(ProfileStore.StashContents profile)
+    {
+        var loaded = players.LoadedProfile(profile.FilePath, out _);
+
+        return loaded?.CharacterData?.PmcData?.Info?.Nickname is { Length: > 0 } nick
+            ? nick
+            : System.IO.Path.GetFileName(profile.FilePath);
+    }
+
+    /// <summary>
+    /// Switch on per-player widths: the two patches that serve and size a player's own
+    /// stash. A failure costs only that -- every player then gets the server-wide width,
+    /// as before 1.1.3 -- and is said once.
+    /// </summary>
+    private bool EnablePlayerPatches()
+    {
+        try
+        {
+            ServeStashPatch.Use(players, httpResponseUtil);
+            StashSizePatch.Use(players);
+
+            var harmony = new HarmonyLib.Harmony("com.mybutthasarash.ultrawidestash");
+
+            harmony.Patch(StashSizePatch.Target(),
+                postfix: new HarmonyLib.HarmonyMethod(typeof(StashSizePatch), nameof(StashSizePatch.Postfix)));
+
+            try
+            {
+                harmony.Patch(ServeStashPatch.Target(),
+                    prefix: new HarmonyLib.HarmonyMethod(typeof(ServeStashPatch), nameof(ServeStashPatch.Prefix)));
+            }
+            catch
+            {
+                // Half a patch is worse than none: a player sized one way on the server
+                // and served another. Neither is kept.
+                harmony.UnpatchSelf();
+                throw;
+            }
+
+            return true;
+        }
+        catch (Exception e)
+        {
+            logger.Error(
+                $"[UltrawideStash] Could not patch SPT for per-player widths ({e.Message}). Every "
+                + "player gets the server-wide width this start.");
+            return false;
+        }
+    }
+
     private static string ModFolder()
     {
         return System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? ".";
     }
 
-    /// <summary>The stash's own grid; every player stash has exactly one.</summary>
-    private static Grid? FirstGrid(TemplateItem template)
-    {
-        var grids = template.Properties?.Grids;
-
-        if (grids is null) return null;
-
-        foreach (var g in grids) return g;
-
-        return null;
-    }
-
-    /// <summary>
-    /// An item template's footprint, 1x1 for anything unrecognised -- the smallest an
-    /// item can be, so this under-reports rather than inventing size.
-    /// </summary>
-    private (int Width, int Height) SizeOf(string templateId)
-    {
-        if (string.IsNullOrEmpty(templateId)) return (1, 1);
-
-        if (!templates.Items.TryGetValue(new MongoId(templateId), out var template)) return (1, 1);
-
-        var width = template.Properties?.Width ?? 1;
-        var height = template.Properties?.Height ?? 1;
-
-        return (width < 1 ? 1 : width, height < 1 ? 1 : height);
-    }
 }
