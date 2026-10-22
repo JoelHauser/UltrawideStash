@@ -426,6 +426,11 @@ From 1.1.3:
 - **A player whose screen gives a different width** is sent their own copy of the stash
   templates, and SPT's own item placement (trader purchases, mail, rewards) uses their
   size, so nothing is put in a column their game does not have.
+- **From 1.1.4 the game is also told its stash size directly**, in the server's answer to
+  the plugin's startup report, and the plugin applies it to the game's own templates. On
+  one Fika host something replaced the item list on its way to the friend's game, so the
+  friend got the host's width anyway (Forge issue #5); this does not depend on that
+  response arriving intact. When it steps in, the player's log says so.
 - **When a player's width changes**, only their stash is repacked, when their game
   starts, backed up first like every other repack.
 - **A player whose game has never run the 1.1.3 plugin** keeps the server-wide width. So

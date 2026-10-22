@@ -50,8 +50,12 @@ public record MeasuredRequest : IRequestData
     public string? ProbeVersion { get; init; }
 }
 
-/// <summary>The answer the probe logs: one line, so a player's BepInEx log carries the server's verdict.</summary>
-public record PlayerReply(string Message);
+/// <summary>
+/// The answer the probe logs: one line, so a player's BepInEx log carries the server's
+/// verdict. <see cref="Shapes"/>, on the hello only, is this player's five stash sizes
+/// (<c>WxH</c> by template id) for the probe to apply to the game's templates.
+/// </summary>
+public record PlayerReply(string Message, Dictionary<string, string>? Shapes = null);
 
 /// <summary>
 /// The two routes each player's probe reports in on. See <see cref="PlayerRecord"/> for
@@ -65,7 +69,8 @@ public class PlayerRouter(JsonUtil jsonUtil, PlayerStashes players, HttpResponse
             new RouteAction<HelloRequest>(
                 "/ultrawidestash/hello",
                 async (url, info, sessionId, output, cancellationToken) =>
-                    httpResponseUtil.NoBody(new PlayerReply(await players.Hello(sessionId, info, cancellationToken)))),
+                    httpResponseUtil.NoBody(new PlayerReply(
+                        await players.Hello(sessionId, info, cancellationToken), players.ShapesFor(sessionId)))),
 
             new RouteAction<MeasuredRequest>(
                 "/ultrawidestash/measured",

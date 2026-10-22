@@ -72,6 +72,12 @@ public static class ServeStashPatch
 
     public static bool Prefix(MongoId sessionID, ref object __result)
     {
+#if SIMULATE_REPLACED_ITEMS
+        // Test builds only (-p:DefineConstants=SIMULATE_REPLACED_ITEMS): serve the database
+        // as it is, the way the Fika host in Forge issue #5 did, so the probe's own fix
+        // (ClientTemplates) can be seen working in a real game. Never in a release build.
+        return true;
+#else
         if (respond is null) return true;
 
         var items = players?.ItemsFor(sessionID);
@@ -80,6 +86,7 @@ public static class ServeStashPatch
 
         __result = respond(items);
         return false;
+#endif
     }
 }
 

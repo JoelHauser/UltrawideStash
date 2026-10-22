@@ -37,7 +37,7 @@ namespace UltrawideStash.Probe
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.1.3";
+        public const string PluginVersion = "1.1.4";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -123,6 +123,10 @@ namespace UltrawideStash.Probe
             // game's UI widens nothing, so it says so.
             Say("this game's screen is " + ServerLink.Screen(Screen.width, Screen.height) + "; "
                 + ServerLink.Hello(Screen.width, Screen.height, _widen.Value && GameTypes.Ready, _reserve.Value));
+
+            // The sizes that hello came back with, onto the game's own templates as soon as
+            // it has loaded them -- not left to the items response alone. See ClientTemplates.
+            Say(ClientTemplates.Install(new Harmony(PluginGuid + ".templates"), Say));
 
             if (!GameTypes.Ready)
             {

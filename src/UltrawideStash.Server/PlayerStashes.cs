@@ -169,6 +169,42 @@ public class PlayerStashes(
     }
 
     /// <summary>
+    /// The five stash sizes this player's game must use, as <c>WxH</c> by template id: their
+    /// own shapes, or the database's for a player who shares them. Sent back in the reply to
+    /// the hello, and applied by the probe to the game's own copy of the templates.
+    ///
+    /// ## Why the game is told twice (1.1.4)
+    ///
+    /// <c>/client/items</c> already carries these sizes. On a Fika host in Forge issue #5 the
+    /// server logged serving a player their own 19-wide stash, and their game measured the
+    /// host's 10-wide one: something on that server replaced the response after this mod
+    /// built it. The same path worked in a real game on a server without whatever that is.
+    /// Telling the probe directly does not depend on the items response surviving the trip.
+    /// </summary>
+    public Dictionary<string, string> ShapesFor(MongoId sessionId)
+    {
+        var shapes = new Dictionary<string, string>();
+        var own = entries.TryGetValue(sessionId.ToString(), out var entry) && Ready ? entry.Own : null;
+
+        foreach (var (id, _) in StashLadder.Rungs)
+        {
+            if (own is not null && own.TryGetValue(id, out var mine))
+            {
+                shapes[id] = $"{mine.Columns}x{mine.Rows}";
+                continue;
+            }
+
+            if (!templates.Items.TryGetValue(new MongoId(id), out var template)) continue;
+
+            var grid = FirstGrid(template)?.Properties;
+
+            if (grid?.CellsH is > 0 && grid.CellsV is > 0) shapes[id] = $"{grid.CellsH}x{grid.CellsV}";
+        }
+
+        return shapes;
+    }
+
+    /// <summary>
     /// SPT's own answer for a player's stash size, corrected to their own shape when
     /// they have one. The bonus rows SPT added stay added: only the template's part of
     /// the answer is swapped.

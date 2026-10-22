@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using HarmonyLib;
 
@@ -57,6 +59,10 @@ namespace UltrawideStash.Probe
                 if (!Resolve()) return "SPT's RequestHandler not found, so the server-wide width applies";
 
                 var body = _post.Invoke(null, new object[] { "/ultrawidestash/hello", json }) as string;
+
+                // This player's stash sizes, applied to the game's own templates once it
+                // has loaded them -- see ClientTemplates. A server before 1.1.4 sends none.
+                ClientTemplates.Want(ShapesOf(body));
 
                 return "server: " + (MessageOf(body) ?? "no answer (is the server half 1.1.3 or later?)");
             }
@@ -117,6 +123,43 @@ namespace UltrawideStash.Probe
             _postAsync = AccessTools.Method(handler, "PostJsonAsync", new[] { typeof(string), typeof(string) });
 
             return _post != null && _postAsync != null;
+        }
+
+        /// <summary>
+        /// The <c>shapes</c> of the hello reply -- <c>{"&lt;template id&gt;": "WxH", ...}</c> --
+        /// as columns and rows by template id; empty when there are none. Read by hand like
+        /// <see cref="MessageOf"/>: every 24-hex key with a <c>WxH</c> value after the key.
+        /// </summary>
+        internal static Dictionary<string, KeyValuePair<int, int>> ShapesOf(string body)
+        {
+            var shapes = new Dictionary<string, KeyValuePair<int, int>>(StringComparer.OrdinalIgnoreCase);
+
+            if (string.IsNullOrEmpty(body)) return shapes;
+
+            var key = body.IndexOf("\"shapes\"", StringComparison.OrdinalIgnoreCase);
+
+            if (key < 0) return shapes;
+
+            var open = body.IndexOf('{', key);
+            var close = open < 0 ? -1 : body.IndexOf('}', open);
+
+            if (open < 0 || close < 0) return shapes;
+
+            foreach (Match m in Regex.Matches(
+                         body.Substring(open, close - open),
+                         "\"([0-9a-fA-F]{24})\"\\s*:\\s*\"(\\d+)x(\\d+)\""))
+            {
+                int columns, rows;
+
+                if (int.TryParse(m.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out columns)
+                    && int.TryParse(m.Groups[3].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out rows)
+                    && columns > 0 && rows > 0)
+                {
+                    shapes[m.Groups[1].Value] = new KeyValuePair<int, int>(columns, rows);
+                }
+            }
+
+            return shapes;
         }
 
         /// <summary>

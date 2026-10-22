@@ -1702,3 +1702,35 @@ record were restored from backup afterwards (hashes match). **Not yet run with t
 whether the hello from Awake really arrives before `/client/items` (the server logs
 "serving their own stash" on the items request, after the hello line), and the
 measurement POST. No real Fika session tried. 302 tests.
+
+## The game applies its own stash sizes (1.1.4)
+
+Forge issue #5 (alfaz62; friend GlipTheGlopMan, also player Gorst; 4K 16:9 host, 3440x1440
+friend, SVM). The host's server logged `serving their own stash, 19 columns (19x16, 19x22,
+19x27, 19x36, 19x152)` on the friend's `/client/items`, in the right order after the hello,
+yet the friend's probe measured `stash grid 10x288` -- the host's unmodified Unheard (SVM
+gave it 288 rows). Something on that server replaced the items response after
+`ServeStashPatch` built it (prefixes all run, so a later one can overwrite `__result`).
+Not found: no server mod here hooks the route, Fika's server code never touches it, and EFT
+and SPT never cache it (EFT only reuses its copy on a 304, which SPT never sends).
+
+The same path works in a real game on this server (HUH set to 10 own while the server was
+19: grid 10x68). So rather than chase the other mod:
+
+- `PlayerStashes.ShapesFor` puts the player's five shapes (`WxH` by template id, own or the
+  database's) in the hello reply (`PlayerReply.Shapes`).
+- `ClientTemplates` (probe) postfixes every `EFT.ItemFactory` constructor -- it is handed
+  the built `ItemTemplates`, and the game makes it before the profile's stash, which
+  `new Stash(id, template)` copies from `template.Grids[0]` -- and sets those grids'
+  `GridWidth`/`GridHeight`. Silent when they already match; otherwise logs
+  `the game's item list did not have this player's stash sizes, so the server's were
+  applied: ... Something on the server replaced the item list after Ultrawide Stash built it.`
+- `MongoID.ToString()` returns `_stringID`, which every constructor sets, so keys match.
+
+**Verified in game 2026-10-22** with a test server build (`-p:DefineConstants=SIMULATE_REPLACED_ITEMS`
+makes `ServeStashPatch` serve the database untouched; never in a release): server-wide 19,
+HUH own 10, probe log `5811ce 19x36 -> 10x68 ...`, stash grid 10x68, no scrollbar.
+
+**Test trap:** with `WidenStashPanel = false` the host's probe writes a 10-column
+`ultrawidestash.measured.json`, and the next server start makes the server-wide width 10
+(and repacks every profile that shares it). Rewrite it to 19 before each such run.
