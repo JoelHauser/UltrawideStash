@@ -2,7 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Every game type, method and field this plugin touches, resolved by name at
@@ -22,12 +22,12 @@ namespace UltrawideStash.Probe
     /// there is no compile-time checking of any game member, which is why this file
     /// exists and why nothing is ever looked up at the patch site.
     ///
-    /// A rename in a future EFT build turns the probe off with a log line rather than
+    /// A rename in a future EFT build turns the plugin off with a log line rather than
     /// throwing into the stash screen.
     /// </summary>
     internal static class GameTypes
     {
-        /// <summary>True when everything below resolved and the probe may run.</summary>
+        /// <summary>True when everything below resolved and the plugin may run.</summary>
         internal static bool Ready { get; private set; }
 
         /// <summary>Why <see cref="Ready"/> is false, for the log.</summary>
@@ -92,7 +92,7 @@ namespace UltrawideStash.Probe
         /// <summary>
         /// <c>EFT.InventoryLogic.Grid.OutOfBoundsItems</c>. Optional: it is the one
         /// direct answer to "did widening strand anything", so it is worth reporting
-        /// when present, but the probe is still useful without it.
+        /// when present, but the plugin is still useful without it.
         /// </summary>
         internal static PropertyInfo OutOfBoundsItems { get; private set; }
 
@@ -144,7 +144,7 @@ namespace UltrawideStash.Probe
 
                 SimpleStashPanelShowInRaid = InRaidIndex(SimpleStashPanelShow);
 
-                // Required. Without it the probe cannot tell the stash from a crate
+                // Required. Without it the plugin cannot tell the stash from a crate
                 // in raid, and widening a raid screen is exactly what must not happen.
                 if (SimpleStashPanelShowInRaid < 0)
                 {

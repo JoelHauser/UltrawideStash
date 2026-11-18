@@ -3,13 +3,18 @@
   <PropertyGroup>
     <!-- net472 because that is what the game's mono runtime loads. -->
     <TargetFramework>net472</TargetFramework>
-    <RootNamespace>UltrawideStash.Probe</RootNamespace>
+    <RootNamespace>UltrawideStash.Client</RootNamespace>
+    <!--
+      The file name players have installed since 0.1.0, when this half only measured.
+      Kept so an update unzipped over an old install replaces the DLL rather than
+      leaving a second copy beside it.
+    -->
     <AssemblyName>UltrawideStash.Probe</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
 
-    <!-- Must match ProbePlugin.PluginVersion. Two places, and they have to agree. -->
-    <Version>1.1.4</Version>
+    <!-- Must match ClientPlugin.PluginVersion. Two places, and they have to agree. -->
+    <Version>1.1.5</Version>
 
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

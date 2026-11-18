@@ -6,7 +6,7 @@ using SPTarkov.Server.Core.Utils;
 
 namespace UltrawideStash.Server;
 
-/// <summary>What the probe sends from its Awake, at every game start.</summary>
+/// <summary>What the game sends from its Awake, at every game start.</summary>
 public record HelloRequest : IRequestData
 {
     [JsonPropertyName("screen")]
@@ -19,10 +19,10 @@ public record HelloRequest : IRequestData
     public float GearPanelReserve { get; init; } = ClientSettings.DefaultReserve;
 
     [JsonPropertyName("probeVersion")]
-    public string? ProbeVersion { get; init; }
+    public string? ClientVersion { get; init; }
 }
 
-/// <summary>The probe's measurement: the same fields as <see cref="Measurement"/>.</summary>
+/// <summary>The game's measurement: the same fields as <see cref="Measurement"/>.</summary>
 public record MeasuredRequest : IRequestData
 {
     [JsonPropertyName("maxColumns")]
@@ -47,18 +47,18 @@ public record MeasuredRequest : IRequestData
     public string? MeasuredAtUtc { get; init; }
 
     [JsonPropertyName("probeVersion")]
-    public string? ProbeVersion { get; init; }
+    public string? ClientVersion { get; init; }
 }
 
 /// <summary>
-/// The answer the probe logs: one line, so a player's BepInEx log carries the server's
+/// The answer the game logs: one line, so a player's BepInEx log carries the server's
 /// verdict. <see cref="Shapes"/>, on the hello only, is this player's five stash sizes
-/// (<c>WxH</c> by template id) for the probe to apply to the game's templates.
+/// (<c>WxH</c> by template id) for the game to apply to its own templates.
 /// </summary>
 public record PlayerReply(string Message, Dictionary<string, string>? Shapes = null);
 
 /// <summary>
-/// The two routes each player's probe reports in on. See <see cref="PlayerRecord"/> for
+/// The two routes each player's game reports in on. See <see cref="PlayerRecord"/> for
 /// why the width is per player, and <see cref="PlayerStashes"/> for what is done with it.
 /// </summary>
 [Injectable(TypePriority = OnLoadOrder.Routers)]

@@ -23,13 +23,13 @@ namespace UltrawideStash.Server;
 ///
 /// But a grid that changes size can leave items outside it, and an item outside the grid
 /// is invisible. Not deleted -- the SPT server has no out-of-bounds concept and never
-/// prunes -- but unreachable, which is what it feels like. EFT's own rescue
-/// (<c>MoveBrokenItemsToSortingTable</c>) cannot be relied on: the Sorting Table it moves
-/// things into has a <c>0 x 0</c> template grid, a stash grid has no horizontal stretch,
-/// and <c>FindFreeSpaceInGrid</c> never grows a grid.
+/// prunes -- but unreachable from the stash. EFT's own rescue
+/// (<c>MoveBrokenItemsToSortingTable</c>) does move such items onto the Sorting Table at
+/// the main menu (seen working 2026-09-22), but that dumps them on a 7-wide table rather
+/// than leaving them where the player arranged them.
 ///
 /// So <see cref="StashRepack"/> runs on every start against the dimensions the stash will
-/// actually have, and relocates anything that no longer fits.
+/// actually have, and relocates anything that no longer fits back inside it.
 ///
 /// ## Why it runs even when nothing changed
 ///
@@ -75,9 +75,9 @@ public class StashWidener(
             System.IO.Path.Combine(folder, "ultrawidestash.config.json"),
             out var note);
 
-        // What the client last measured of its own stash panel. Absent on a first run,
-        // on a dedicated server and whenever the probe is not installed -- all of which
-        // fall back to the conservative estimate from the declared screen size.
+        // What the game last measured of its own stash panel on this PC. Absent on a
+        // first run and on a dedicated server, both of which use the prediction from the
+        // screen instead.
         var measurement = Measurement.Read(
             System.IO.Path.Combine(folder, Measurement.FileName),
             out var measurementNote);
@@ -85,15 +85,15 @@ public class StashWidener(
         // The screen the game will open on, so the very first start can size the stash
         // without waiting for the client to measure itself. Falls back to the declared
         // size in the config when it cannot be read.
-        var detected = ScreenProbe.Detect(out var screenNote);
+        var detected = SavedScreen.Detect(out var screenNote);
 
         var screenWidth = detected?.Width ?? settings.ScreenWidth;
         var screenHeight = detected?.Height ?? settings.ScreenHeight;
 
         // A measurement taken on a different screen describes a panel that no longer
         // exists. Keeping it would size the stash for the old monitor and, if that one
-        // was wider, overflow the new one -- so it is dropped and the estimate used
-        // until the client measures again.
+        // was wider, overflow the new one -- so it is dropped and the prediction for
+        // the new screen used instead.
         if (measurement is not null && detected is not null)
         {
             var now = $"{detected.Value.Width}x{detected.Value.Height}";
@@ -104,32 +104,32 @@ public class StashWidener(
             {
                 logger.Info(
                     $"[UltrawideStash] The stored measurement was taken on {then} and this "
-                    + $"machine is now {now}, so it has been ignored. Open your stash once and "
-                    + "restart to measure the new screen.");
+                    + $"machine is now {now}, so it has been ignored and the width predicted "
+                    + "for the new screen.");
 
                 measurement = null;
                 measurementNote = $"measurement from {then} discarded";
             }
         }
 
-        // A measurement from a probe before 1.0.5 was taken on EFT's own 16:9 inventory
-        // frame, which those probes could not widen: it says 10 columns on any install
+        // A measurement from a version before 1.0.5 was taken on EFT's own 16:9 inventory
+        // frame, which those versions could not widen: it says 10 columns on any install
         // without UIScale.Reloaded. Trusting it after an update would keep the stash at
         // 10 for one more start, and repack items to fit. The prediction from the
         // screen is what 1.0.5 actually builds, so that is used until it measures again.
         if (measurement is not null && measurement.PredatesTheStretch())
         {
             logger.Info(
-                $"[UltrawideStash] The stored measurement was written by probe "
-                + $"{measurement.ProbeVersion ?? "(unknown)"}, which could not widen EFT's own "
-                + "inventory screen, so it has been ignored. The width is predicted from your "
+                $"[UltrawideStash] The stored measurement was written by Ultrawide Stash "
+                + $"{measurement.ClientVersion ?? "(unknown version)"}, which could not widen EFT's "
+                + "own inventory screen, so it has been ignored. The width is predicted from your "
                 + "screen until the game measures again.");
 
             measurement = null;
-            measurementNote = "measurement from a probe before 1.0.5 ignored";
+            measurementNote = "measurement from a version before 1.0.5 ignored";
         }
 
-        // The probe's own settings, so the prediction matches what it will draw. See
+        // The game half's own settings, so the prediction matches what it will draw. See
         // ClientSettings for the 5120x1440 tester whose raised reserve cost a resize.
         var client = ClientSettings.Read(ClientSettings.PathFor(folder), out var clientNote);
 
@@ -375,49 +375,28 @@ public class StashWidener(
                     : string.Empty));
         }
 
-        // The first run after an install, where nothing has measured the panel yet.
-        //
-        // This is the single most confusing state the mod has: the player installs a
-        // mod called Ultrawide Stash, starts the server, and it reports a vanilla
-        // 10-column stash with no explanation. It is not a failure -- the width comes
-        // from the client measuring its own panel, which cannot have happened before
-        // the client has run -- but saying so quietly, in the same tone as a normal
-        // result, reads as the mod not working.
-        //
-        // Warning rather than Info because the player has to do something.
-        if (measurement is null && applied == 0 && choice.IsNoOp)
+        // A run that changed nothing, said plainly: a vanilla stash from a mod called
+        // Ultrawide Stash otherwise reads as the mod not working. Only when nothing above
+        // has already explained it (a diagnosis, a client setting, a clamp, a relocation)
+        // and the width was the mod's own choice rather than a configured 10.
+        if (applied == 0 && moved == 0 && choice.IsNoOp && diagnosis is null
+            && clientWarning is null
+            && (choice.Source is ColumnChoice.Origin.Measured or ColumnChoice.Origin.Estimated))
         {
-            logger.Warning(
-                "[UltrawideStash] NOT WIDENED YET -- expected on a first run, and one more "
-                + "step finishes it. The width is measured from your real stash panel, so the "
-                + "client has to run once before the server can know it.");
-            logger.Warning(
-                "[UltrawideStash]   1. Check WidenStashPanel is true in BepInEx/config/"
-                + "com.mybutthasarash.ultrawidestash.cfg");
-            logger.Warning(
-                "[UltrawideStash]   2. Start the game and open your stash once.");
-            logger.Warning(
-                "[UltrawideStash]   3. Quit, restart this server, and the stash will be its "
-                + "full width.");
-            logger.Warning(
-                "[UltrawideStash] If step 1 is false the panel is never widened, the probe "
-                + "measures the vanilla one, and every later start reads 10 columns back "
-                + "from that measurement.");
-        }
+            var eachPlayer = perPlayer
+                ? " Each player's stash is still sized for their own screen once their game starts."
+                : string.Empty;
 
-        // Explain a do-nothing run, but only when it really did nothing. A run that
-        // clamped an over-wide config back to vanilla also changes no template, and
-        // saying "no change was made" there would contradict the relocation count.
-        if (measurement is not null && diagnosis is null && applied == 0 && moved == 0
-            && choice.IsNoOp)
-        {
-            logger.Info(
-                "[UltrawideStash] No change was made, and on a 16:9 screen that is the correct "
-                + "default: EFT scales its menu by min(width/1920, height/1080), so 1080p, 1440p "
-                + "and 4K all get a canvas exactly 1920 units wide and have no spare room to "
-                + "widen into. Only a wider-than-16:9 screen gains any. Install the probe, open "
-                + "your stash once and restart the server -- if the panel does have slack of its "
-                + "own, the measurement will find it and auto will use it.");
+            logger.Info(detected is null
+                ? "[UltrawideStash] No change was made to the server-wide stash: this server "
+                  + $"cannot tell what screen the game runs on ({screenNote}), so it sizes for "
+                  + $"{screenWidth}x{screenHeight} from its config, which has no spare width."
+                  + eachPlayer
+                : "[UltrawideStash] No change was made, and on a 16:9 (or narrower) screen that "
+                  + "is the correct default: EFT scales its menu by min(width/1920, height/1080), "
+                  + "so 1080p, 1440p and 4K all get a canvas exactly 1920 units wide and have no "
+                  + "spare room to widen into. Only a wider-than-16:9 screen gains any."
+                  + eachPlayer);
         }
 
         if (applied > 0)
@@ -608,9 +587,9 @@ public class StashWidener(
             "DO NOT just delete this folder while your stash is wider than 10 columns.",
             "",
             "Nothing would be deleted -- the SPT server never removes items -- but anything",
-            "sitting in column 10 or beyond would become invisible and unreachable, because",
-            "a vanilla stash is only 10 wide and the game's own recovery for this does not",
-            "work (the Sorting Table it tries to move things into has a 0x0 grid).",
+            "sitting in column 10 or beyond would be outside a vanilla 10-wide stash. The",
+            "game then moves those items onto the Sorting Table when it reaches the main",
+            "menu, which leaves them piled on a 7-wide table instead of in your stash.",
             "",
             "Instead:",
             "",
@@ -629,9 +608,11 @@ public class StashWidener(
             "",
             "ALREADY DELETED IT AND THINGS ARE MISSING?",
             "",
-            "Nothing is lost. Reinstall the mod with the same \"columns\" value you were",
-            "using, start the server, and everything will be exactly where you left it.",
-            "Then follow the steps above.",
+            "Look on the Sorting Table first: the game moves them there by itself.",
+            "",
+            "Anything not there is still in your profile. Reinstall the mod with the same",
+            "\"columns\" value you were using, start the server, and it will be where you",
+            "left it. Then follow the steps above.",
             "",
             "Profile backups this mod has taken are kept in:",
             $"  {backupDirectory}",
@@ -657,7 +638,7 @@ public class StashWidener(
     }
 
     /// <summary>
-    /// What to tell the player when the probe's settings cost them width, or null.
+    /// What to tell the player when the game half's settings cost them width, or null.
     /// Public and static so the wording is tested.
     /// </summary>
     public static string? ClientSettingsWarning(ClientSettings client, int screenWidth, int screenHeight)

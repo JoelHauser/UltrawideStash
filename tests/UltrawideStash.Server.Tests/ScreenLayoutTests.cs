@@ -1,4 +1,4 @@
-using UltrawideStash.Probe;
+using UltrawideStash.Client;
 using Xunit;
 
 namespace UltrawideStash.Server.Tests;

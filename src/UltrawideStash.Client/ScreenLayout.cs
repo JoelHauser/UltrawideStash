@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// An axis-aligned box in canvas units, y up. Unity's <c>Rect</c> would do, but

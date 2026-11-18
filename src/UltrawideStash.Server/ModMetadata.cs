@@ -9,7 +9,7 @@ namespace UltrawideStash.Server;
 public record ModMetadata : IModMetadata
 {
     /// <summary>
-    /// Shared with the client probe's [BepInPlugin] so the two halves are visibly
+    /// Shared with the game half's [BepInPlugin] so the two halves are visibly
     /// one mod, following the prefix the other repos here are registered under.
     /// </summary>
     public string ModGuid { get; init; } = "com.mybutthasarash.ultrawidestash";
@@ -20,7 +20,7 @@ public record ModMetadata : IModMetadata
 
     public List<string>? Contributors { get; init; }
 
-    public SemanticVersioning.Version Version { get; init; } = new("1.1.4");
+    public SemanticVersioning.Version Version { get; init; } = new("1.1.5");
 
     /// <summary>
     /// A hard gate: a mod outside the range loads nothing and logs nothing, so

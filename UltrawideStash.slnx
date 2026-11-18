@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/UltrawideStash.Server/UltrawideStash.Server.csproj" />
-    <Project Path="src/UltrawideStash.Probe/UltrawideStash.Probe.csproj" />
+    <Project Path="src/UltrawideStash.Client/UltrawideStash.Client.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/UltrawideStash.Server.Tests/UltrawideStash.Server.Tests.csproj" />

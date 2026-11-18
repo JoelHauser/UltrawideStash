@@ -3,11 +3,11 @@ using Xunit;
 namespace UltrawideStash.Server.Tests;
 
 /// <summary>
-/// The probe's BepInEx settings, read by the server so its first-start prediction
-/// matches what the probe will draw.
+/// The game half's BepInEx settings, read by the server so its first-start prediction
+/// matches what the game will draw.
 ///
 /// Prompted by a 5120x1440 tester on 1.0.5 whose <c>GearPanelReserve</c> was about 1000:
-/// the server predicted 39 columns, the probe widened the panel to 27, and the stash
+/// the server predicted 39 columns, the game widened the panel to 27, and the stash
 /// scrolled sideways until the reserve went back to 620.
 /// </summary>
 public class ClientSettingsTests
@@ -126,7 +126,7 @@ public class ClientSettingsTests
         Assert.Equal(39, StashFit.WidenedColumnsForScreen(5120, 1440));
     }
 
-    /// <summary>The probe raises anything below 520 to 520, so the server does too.</summary>
+    /// <summary>The game raises anything below 520 to 520, so the server does too.</summary>
     [Fact]
     public void AReserveBelowTheFloorIsRaised()
     {
@@ -146,7 +146,7 @@ public class ClientSettingsTests
         Assert.Equal(ColumnChoice.Origin.Estimated, choice.Source);
     }
 
-    /// <summary>A probe that will not widen leaves no room: predict vanilla.</summary>
+    /// <summary>A game that will not widen leaves no room: predict vanilla.</summary>
     [Fact]
     public void WidenStashPanelFalsePredictsVanilla()
     {
@@ -155,11 +155,11 @@ public class ClientSettingsTests
         Assert.Equal(StashFit.VanillaColumns, ColumnChoice.For(null, null, 3440, 1440, false, client).Columns);
     }
 
-    /// <summary>A measurement is what the probe actually drew, reserve and all, so it still wins.</summary>
+    /// <summary>A measurement is what the game actually drew, reserve and all, so it still wins.</summary>
     [Fact]
     public void AMeasurementStillWinsOverThePrediction()
     {
-        var measured = new Measurement { MaxColumns = 27, ProbeVersion = "1.0.5" };
+        var measured = new Measurement { MaxColumns = 27, ClientVersion = "1.0.5" };
         var client = new ClientSettings(true, 620f, true);
 
         Assert.Equal(27, ColumnChoice.For(null, measured, 5120, 1440, false, client).Columns);

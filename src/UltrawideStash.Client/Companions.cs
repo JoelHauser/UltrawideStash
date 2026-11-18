@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using BepInEx.Bootstrap;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Which other stash-touching plugins are loaded, named in the report.

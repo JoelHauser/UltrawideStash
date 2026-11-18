@@ -41,8 +41,8 @@ public class StashFitTests
             StashFit.CanvasWidth(3840, 2160));
 
         Assert.Equal(
-            StashFit.ConservativeColumnsForScreen(1920, 1080),
-            StashFit.ConservativeColumnsForScreen(3840, 2160));
+            StashFit.WidenedColumnsForScreen(1920, 1080),
+            StashFit.WidenedColumnsForScreen(3840, 2160));
     }
 
     [Fact]
@@ -53,39 +53,12 @@ public class StashFitTests
         Assert.Equal(StashFit.ReferenceWidth, StashFit.CanvasWidth(1920, 0));
     }
 
-    [Theory]
-    // The whole point of the new default: a 16:9 screen gets vanilla, so an unmeasured
-    // install on the commonest hardware in the world changes nothing at all.
-    [InlineData(1920, 1080, 10)]
-    [InlineData(2560, 1440, 10)]
-    [InlineData(3840, 2160, 10)]
-    [InlineData(1920, 1200, 10)]
-    // 660 extra canvas px / 63 = 10 extra columns.
-    [InlineData(3440, 1440, 20)]
-    [InlineData(2560, 1080, 20)]
-    // 1920 extra / 63 = 30 extra columns.
-    [InlineData(5120, 1440, 40)]
-    public void TheConservativeCeilingGrantsOnlyWidthBeyondSixteenByNine(int w, int h, int expected)
-    {
-        Assert.Equal(expected, StashFit.ConservativeColumnsForScreen(w, h));
-    }
-
-    [Fact]
-    public void TheConservativeCeilingNeverGoesBelowVanilla()
-    {
-        foreach (var (w, h) in new[] { (800, 600), (1024, 768), (1280, 1024), (640, 480) })
-        {
-            Assert.True(
-                StashFit.ConservativeColumnsForScreen(w, h) >= StashFit.VanillaColumns,
-                $"{w}x{h} should never suggest narrowing the stash");
-        }
-    }
-
     [Fact]
     public void AGrantedColumnAlwaysActuallyFitsTheCanvas()
     {
-        // The ceiling has to be honest in the direction that matters: whatever it
-        // allows must draw inside the canvas, on every shape.
+        // The prediction has to be honest in the direction that matters: whatever it
+        // allows must draw inside the canvas, on every shape -- not only the 3440x1440
+        // it was calibrated on.
         foreach (var (w, h) in new[]
                  {
                      (1920, 1080), (2560, 1440), (3840, 2160), (1920, 1200),
@@ -93,7 +66,7 @@ public class StashFitTests
                  })
         {
             var canvas = StashFit.CanvasWidth(w, h);
-            var columns = StashFit.ConservativeColumnsForScreen(w, h);
+            var columns = StashFit.WidenedColumnsForScreen(w, h);
 
             Assert.True(
                 StashFit.WidthOfColumns(columns) <= canvas,

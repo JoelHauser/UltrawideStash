@@ -5,24 +5,24 @@ using System.Text.Json.Serialization;
 namespace UltrawideStash.Server;
 
 /// <summary>
-/// What one player's probe told the server about their own screen.
+/// What one player's game told the server about their own screen.
 ///
 /// ## Why the width is per player (1.1.3)
 ///
 /// Up to 1.1.2 the width was one number for the whole server, chosen from the screen of
 /// the machine the server runs on. That is right for single player and wrong for Fika:
 /// everyone plays on the host's server, so a 16:9 friend got the host's 21:9 stash and
-/// a sideways scrollbar (Forge issue #4). The friend's own probe could not help -- it
+/// a sideways scrollbar (Forge issue #4). The friend's own game could not help -- it
 /// wrote its measurement into the server folder on the friend's PC, which the host never
 /// reads.
 ///
-/// So each probe now reports in over HTTP, to whichever server it is connected to, under
+/// So each game now reports in over HTTP, to whichever server it is connected to, under
 /// its own session: the screen it starts on and its two layout settings at game start
 /// (<c>/ultrawidestash/hello</c>), and its measurement when it takes one
 /// (<c>/ultrawidestash/measured</c>). One file per profile, in <c>players/</c> beside the
 /// config, keyed by profile id.
 ///
-/// A profile with no record -- one whose game has never run the 1.1.3 probe -- keeps
+/// A profile with no record -- one whose game has never run 1.1.3 or later -- keeps
 /// the server-wide width, exactly as before, so updating changes nothing until each
 /// player starts their game once.
 /// </summary>
@@ -35,27 +35,27 @@ public sealed class PlayerRecord
     [JsonPropertyName("screen")]
     public string? Screen { get; set; }
 
-    /// <summary>The probe's <c>WidenStashPanel</c>.</summary>
+    /// <summary>The game's <c>WidenStashPanel</c>.</summary>
     [JsonPropertyName("widenStashPanel")]
     public bool WidenStashPanel { get; set; } = true;
 
-    /// <summary>The probe's <c>GearPanelReserve</c>.</summary>
+    /// <summary>The game's <c>GearPanelReserve</c>.</summary>
     [JsonPropertyName("gearPanelReserve")]
     public float GearPanelReserve { get; set; } = ClientSettings.DefaultReserve;
 
-    /// <summary>The probe that last reported in.</summary>
+    /// <summary>The version of the game half that last reported in.</summary>
     [JsonPropertyName("probeVersion")]
-    public string? ProbeVersion { get; set; }
+    public string? ClientVersion { get; set; }
 
     /// <summary>When the game last started, for the record's own sake.</summary>
     [JsonPropertyName("seenAtUtc")]
     public string? SeenAtUtc { get; set; }
 
-    /// <summary>The probe's last measurement of this player's stash panel, or null.</summary>
+    /// <summary>The game's last measurement of this player's stash panel, or null.</summary>
     [JsonPropertyName("measurement")]
     public Measurement? Measurement { get; set; }
 
-    /// <summary>The probe settings, in the shape <see cref="ColumnChoice"/> takes.</summary>
+    /// <summary>The game's settings, in the shape <see cref="ColumnChoice"/> takes.</summary>
     [JsonIgnore]
     public ClientSettings Client => new(WidenStashPanel, GearPanelReserve, true);
 
@@ -79,7 +79,7 @@ public sealed class PlayerRecord
     /// <summary>
     /// The measurement when it describes the screen this player is on now, else null,
     /// with <paramref name="note"/> saying which. Same rules as the server-wide file:
-    /// another screen's panel, or one measured by a probe before 1.0.5, is not trusted.
+    /// another screen's panel, or one measured by a version before 1.0.5, is not trusted.
     /// </summary>
     public Measurement? UsableMeasurement(out string note)
     {
@@ -99,7 +99,7 @@ public sealed class PlayerRecord
 
         if (m.PredatesTheStretch())
         {
-            note = $"measurement from probe {m.ProbeVersion ?? "(unknown)"} ignored";
+            note = $"measurement from version {m.ClientVersion ?? "(unknown)"} ignored";
             return null;
         }
 

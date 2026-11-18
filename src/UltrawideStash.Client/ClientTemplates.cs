@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Text;
 using HarmonyLib;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Sizes the game's own copy of the five stash templates to what the server told this
@@ -20,7 +20,7 @@ namespace UltrawideStash.Probe
     /// response after the mod built it. The same path, tested in a real game on a server
     /// without whatever that is, gave the player their own stash. Rather than chase every
     /// mod that might rewrite that response, the sizes also come back in the reply to the
-    /// probe's hello (see <see cref="ServerLink"/>) and are applied here.
+    /// plugin's hello (see <see cref="ServerLink"/>) and are applied here.
     ///
     /// ## Where, and why there
     ///

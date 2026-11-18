@@ -25,10 +25,10 @@ public class PerPlayerTests
     private const string Unheard = "6602bcf19cc643f44a04274b";
 
     private static PlayerRecord Record(string screen, Measurement? measurement = null)
-        => new() { Screen = screen, ProbeVersion = "1.1.3", Measurement = measurement };
+        => new() { Screen = screen, ClientVersion = "1.1.3", Measurement = measurement };
 
-    private static Measurement Measured(int columns, string screen, string probe = "1.1.3")
-        => new() { MaxColumns = columns, Screen = screen, ProbeVersion = probe, CanWiden = columns > 10 };
+    private static Measurement Measured(int columns, string screen, string version = "1.1.3")
+        => new() { MaxColumns = columns, Screen = screen, ClientVersion = version, CanWiden = columns > 10 };
 
     private static ProfileStore.StashContents Stash(string template, params StashRepack.Placement[] items)
         => new("p.json", "stash", template, items.ToList(), "table", new List<StashRepack.Placement>());

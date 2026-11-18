@@ -2,7 +2,7 @@
 
 using System;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// How far the character screen's stash panel is widened -- pure arithmetic, no

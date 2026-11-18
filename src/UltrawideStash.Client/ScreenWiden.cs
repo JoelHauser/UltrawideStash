@@ -5,7 +5,7 @@ using System.Text;
 using HarmonyLib;
 using UnityEngine;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>Which screen a stash panel is being shown on.</summary>
     internal enum StashScreen
@@ -1501,7 +1501,7 @@ namespace UltrawideStash.Probe
         private static readonly Dictionary<string, bool> IsACache = new Dictionary<string, bool>();
 
         /// <summary>
-        /// Type test by name. The probe does not reference UnityEngine.UI, and adding
+        /// Type test by name. The plugin does not reference UnityEngine.UI, and adding
         /// it for three type checks is not worth another assembly to keep in step.
         /// </summary>
         private static bool IsA(Type type, string fullName)

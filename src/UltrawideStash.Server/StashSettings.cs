@@ -54,10 +54,9 @@ public sealed class StashSettings
     /// <summary>
     /// How many cells across the stash should be, or null for <c>"auto"</c>.
     ///
-    /// Auto uses the probe's measurement when there is one, and a deliberately
-    /// pessimistic estimate from <see cref="ScreenWidth"/>/<see cref="ScreenHeight"/>
-    /// when there is not -- which on a 16:9 screen is vanilla 10, i.e. it changes
-    /// nothing until the panel has actually been measured.
+    /// Auto uses the game's measurement of its stash panel when there is one, and
+    /// otherwise predicts the panel from the screen (<see cref="StashFit.WidenedColumns"/>)
+    /// -- which on a 16:9 screen is vanilla 10, so a 16:9 install changes nothing.
     ///
     /// An explicit number is honoured but still clamped to what the screen can show,
     /// unless <see cref="IgnoreMeasurement"/> is set. A grid wider than the panel does
@@ -70,13 +69,14 @@ public sealed class StashSettings
     public int? Columns { get; set; }
 
     /// <summary>
-    /// The screen the game will run at, used only to work out a safe column ceiling
-    /// before the probe has measured anything. Defaults to 1920x1080, whose ceiling is
-    /// vanilla 10 -- so an install with no probe and no edits does nothing at all.
+    /// The screen to size the server-wide stash for when EFT's saved resolution cannot
+    /// be read on this machine (<see cref="SavedScreen"/>) -- a dedicated server, or
+    /// not Windows. Defaults to 1920x1080, whose ceiling is vanilla 10.
     ///
-    /// Worth setting on a dedicated server, where the probe's measurement never
-    /// reaches this machine. Resolution does not matter, only aspect ratio: a 4K 16:9
-    /// screen has the same canvas width as a 1080p one.
+    /// Each player's game also reports its own screen when it starts, and their stash is
+    /// sized for that (<see cref="PlayerRecord"/>), so this only decides the width for
+    /// players whose game has not reported in. Resolution does not matter, only aspect
+    /// ratio: a 4K 16:9 screen has the same canvas width as a 1080p one.
     /// </summary>
     [JsonPropertyName("screenWidth")]
     public int ScreenWidth { get; set; } = StashFit.ReferenceWidth;
@@ -89,7 +89,7 @@ public sealed class StashSettings
     /// True to use <see cref="Columns"/> exactly as written, with no clamp to what the
     /// screen can show.
     ///
-    /// For someone who knows their panel better than the probe does -- a UI mod that
+    /// For someone who knows their panel better than the measurement does -- a UI mod that
     /// re-anchors the stash, say. Off by default, because the clamp is the whole
     /// protection against a grid nobody can see.
     /// </summary>

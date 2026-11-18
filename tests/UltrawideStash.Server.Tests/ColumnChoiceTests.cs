@@ -63,7 +63,7 @@ public class ColumnChoiceTests
     public void AMeasurementLetsASixteenByNineScreenWidenAfterAll()
     {
         // The estimate assumes the panel has no slack because the server cannot see
-        // it. If the probe finds some, that is real evidence and it wins.
+        // it. If the game finds some, that is real evidence and it wins.
         var choice = ColumnChoice.For(null, Measured(14), 1920, 1080, false);
 
         Assert.Equal(14, choice.Columns);
@@ -149,7 +149,7 @@ public class ColumnChoiceTests
     [Fact]
     public void TheCeilingItselfNeverFallsBelowVanilla()
     {
-        // A probe that somehow reports 3 must not become a reason to narrow anyone's
+        // A game that somehow reports 3 must not become a reason to narrow anyone's
         // stash -- StashLayout would refuse it, but the ceiling should not propose it.
         var choice = ColumnChoice.For(null, Measured(3), 1920, 1080, false);
 

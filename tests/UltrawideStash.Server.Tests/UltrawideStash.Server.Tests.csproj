@@ -29,13 +29,14 @@
   </ItemGroup>
 
   <!--
-    The probe's layout planner, compiled in directly. The probe is net472 against the
-    game's Unity assemblies and cannot be referenced from here, but this one file is
-    pure arithmetic with no engine type in it, which is what makes it testable.
+    The client plugin's two layout planners, compiled in directly. The plugin is net472
+    against the game's Unity assemblies and cannot be referenced from here, but these
+    two files are pure arithmetic with no engine type in them, which is what makes them
+    testable.
   -->
   <ItemGroup>
-    <Compile Include="..\..\src\UltrawideStash.Probe\ScreenLayout.cs" Link="Probe\ScreenLayout.cs" />
-    <Compile Include="..\..\src\UltrawideStash.Probe\StashPlan.cs" Link="Probe\StashPlan.cs" />
+    <Compile Include="..\..\src\UltrawideStash.Client\ScreenLayout.cs" Link="Client\ScreenLayout.cs" />
+    <Compile Include="..\..\src\UltrawideStash.Client\StashPlan.cs" Link="Client\StashPlan.cs" />
   </ItemGroup>
 
 </Project>

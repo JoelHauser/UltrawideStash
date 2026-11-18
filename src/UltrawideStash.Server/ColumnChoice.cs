@@ -15,12 +15,11 @@ namespace UltrawideStash.Server;
 /// ## The order of authority
 ///
 /// <list type="number">
-///   <item><b>A probe measurement</b>, when there is one. It is the only source that
+///   <item><b>The game's measurement</b>, when there is one. It is the only source that
 ///   has seen the real panel on the real screen.</item>
-///   <item><b>The declared screen size</b>, through
-///   <see cref="StashFit.ConservativeColumns"/>, which grants only the canvas width
-///   that exists beyond 16:9 and assumes the panel has no slack of its own. On a 16:9
-///   screen that is vanilla 10, so an unmeasured 16:9 install changes nothing.</item>
+///   <item><b>The screen size</b>, through <see cref="StashFit.WidenedColumns"/>, which
+///   predicts what the game's widening will leave room for. On a 16:9 screen that is
+///   vanilla 10, so a 16:9 install changes nothing.</item>
 ///   <item><b>The player overriding both</b>, with <c>ignoreMeasurement</c>. Their
 ///   machine, their call -- but they have to say so.</item>
 /// </list>
@@ -30,10 +29,10 @@ public static class ColumnChoice
     /// <summary>Where the final number came from, for the log and for tests.</summary>
     public enum Origin
     {
-        /// <summary>Auto, from the probe's measurement.</summary>
+        /// <summary>Auto, from the game's measurement.</summary>
         Measured,
 
-        /// <summary>Auto, from the declared screen size.</summary>
+        /// <summary>Auto, predicted from the screen size.</summary>
         Estimated,
 
         /// <summary>The player's number, and it fitted.</summary>
@@ -69,16 +68,16 @@ public static class ColumnChoice
     /// <param name="requested">
     /// The config's <c>columns</c>, or null for <c>"auto"</c>.
     /// </param>
-    /// <param name="measurement">The probe's last measurement, or null.</param>
-    /// <param name="screenWidth">Declared screen width, used only without a measurement.</param>
+    /// <param name="measurement">The game's last measurement, or null.</param>
+    /// <param name="screenWidth">Screen width, used only without a measurement.</param>
     /// <param name="screenHeight">Declared screen height, likewise.</param>
     /// <param name="ignoreMeasurement">
     /// True to honour <paramref name="requested"/> with no ceiling at all.
     /// </param>
     /// <param name="client">
-    /// The probe's own settings, for the prediction: a raised <c>GearPanelReserve</c>
+    /// The game half's own settings, for the prediction: a raised <c>GearPanelReserve</c>
     /// leaves the stash less room, and <c>WidenStashPanel = false</c> leaves it none.
-    /// Null means the probe's defaults.
+    /// Null means their defaults.
     /// </param>
     public static Choice For(
         int? requested,
@@ -113,9 +112,8 @@ public static class ColumnChoice
         {
             return new Choice(ceiling, ceiling, ceilingFrom,
                 ceilingFrom == Origin.Measured
-                    ? $"auto: {ceiling} columns, from the probe's measurement"
-                    : $"auto: {ceiling} columns, estimated from a {screenWidth}x{screenHeight} screen "
-                      + "(no probe measurement yet)");
+                    ? $"auto: {ceiling} columns, as measured in the game"
+                    : $"auto: {ceiling} columns, predicted for a {screenWidth}x{screenHeight} screen");
         }
 
         var wanted = Clamp(requested.Value, StashFit.MinColumns, StashFit.AbsoluteMaxColumns);
@@ -152,13 +150,12 @@ public static class ColumnChoice
 
         from = Origin.Estimated;
 
-        // The probe will leave the panel alone, so a wider grid would only scroll.
+        // The game will leave the panel alone, so a wider grid would only scroll.
         if (!client.WidenStashPanel) return StashFit.VanillaColumns;
 
-        // Predict what the client's widening will produce rather than assuming the
-        // panel is pinned. ConservativeColumns was written when it was -- it grants
-        // only canvas beyond 16:9 and answers 20 on a 2580 canvas, one more than the
-        // widened panel can actually show, which would overflow into a scrollbar.
+        // Predict what the client's widening will produce. Granting every pixel past
+        // 16:9 instead (0.6.0 to 0.9.2) answers 20 on a 2580 canvas, one more than the
+        // widened panel can show -- a sideways scrollbar.
         return Clamp(
             StashFit.WidenedColumnsForScreen(screenWidth, screenHeight, client.GearPanelReserve),
             StashFit.VanillaColumns,

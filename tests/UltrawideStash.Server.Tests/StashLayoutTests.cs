@@ -165,7 +165,7 @@ public class StashLayoutTests
 
     /// <summary>
     /// The pixel width has to match EFT's own arithmetic exactly -- it is what the
-    /// probe compares against, and a disagreement would make both reports wrong in
+    /// game's measurement compares against, and a disagreement would make both reports wrong in
     /// the same direction and look like agreement.
     /// </summary>
     [Theory]

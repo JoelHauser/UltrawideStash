@@ -97,7 +97,7 @@ public class SortingTableOverflowTests : IDisposable
     public void RotationIsRespectedInTheTable()
     {
         // 5x2 stood on end is 2 wide, 5 tall — fits a 7-wide table.
-        var upright = At("rifle", 0, 0, w: 5, h: 2, r: StashOccupancy.Vertical);
+        var upright = At("rifle", 0, 0, w: 5, h: 2, r: StashRepack.Vertical);
 
         var transfers = StashRepack.IntoSortingTable([upright], [], out var tooWide);
 

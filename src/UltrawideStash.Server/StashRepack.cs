@@ -10,19 +10,14 @@ namespace UltrawideStash.Server;
 /// prunes, so it sits in the profile JSON with its old coordinates — but the player
 /// cannot see or reach it, which is indistinguishable from losing it while it lasts.
 ///
-/// EFT does try to rescue such items on its own, through
-/// <c>MainMenuShowOperation.MoveBrokenItemsToSortingTable</c>. That rescue cannot be
-/// relied on, and the reason is timing rather than capacity: the Sorting Table's grid is
-/// growable (its <c>cellsH: 0, cellsV: 0</c> become stretch flags in
-/// <c>GridSerializer.Deserialize</c>) but **unsized** until
-/// <c>SortingTableWindow.ShowGrid</c> clamps it to 7 wide — which happens when the player
-/// opens that window, after the main-menu rescue has already run. <c>GetFreeLocation</c>
-/// is a pure search and never grows anything, so at <c>0 x 0</c> it returns null and the
-/// item is skipped.
+/// EFT does rescue such items on its own, through
+/// <c>MainMenuShowOperation.MoveBrokenItemsToSortingTable</c> -- seen working in game on
+/// 2026-09-22 -- but it piles them onto the 7-wide Sorting Table rather than leaving them
+/// in the stash the player arranged.
 ///
-/// So the mod does it instead, and does it before anything can see the bad state: the
-/// relocation is written to the profile on disk at <c>PostLoad</c>, which runs before
-/// <c>SaveCallbacks</c> loads profiles into the server.
+/// So the mod does it first, at server start, against the stash's final size: in the
+/// server's loaded copy of each profile, saved through SPT (see
+/// <see cref="StashWidener"/>), so the client is never served the bad state.
 ///
 /// ## The important consequence
 ///
@@ -39,6 +34,13 @@ namespace UltrawideStash.Server;
 /// </summary>
 public static class StashRepack
 {
+    /// <summary>
+    /// The rotation value EFT stores for an item stood on end. The enum is
+    /// <c>Horizontal = 0, Vertical = 1</c>, and a vertical item swaps its two dimensions.
+    /// Getting that backwards under-reports depth, which is the direction that loses items.
+    /// </summary>
+    public const int Vertical = 1;
+
     /// <summary>One item as the profile stores it, with its template footprint.</summary>
     public readonly record struct Placement(
         string ItemId,
@@ -50,11 +52,11 @@ public static class StashRepack
     {
         /// <summary>Cells across, after rotation.</summary>
         public int EffectiveWidth =>
-            Math.Max(1, Rotation == StashOccupancy.Vertical ? Height : Width);
+            Math.Max(1, Rotation == Vertical ? Height : Width);
 
         /// <summary>Cells down, after rotation.</summary>
         public int EffectiveHeight =>
-            Math.Max(1, Rotation == StashOccupancy.Vertical ? Width : Height);
+            Math.Max(1, Rotation == Vertical ? Width : Height);
 
         /// <summary>Whether this sits wholly inside a grid of the given size.</summary>
         public bool FitsIn(int columns, int rows)

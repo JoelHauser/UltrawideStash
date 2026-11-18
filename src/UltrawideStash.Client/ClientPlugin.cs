@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
@@ -7,22 +6,31 @@ using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
-    /// A read-only measuring stick for the stash screen.
+    /// The game half of Ultrawide Stash: makes room on screen for the wider stash.
     ///
-    /// ## What this is and is not
+    /// ## What it does
     ///
-    /// It changes nothing. It opens no window, moves no RectTransform and patches
-    /// exactly one method with a postfix that only reads. Its whole job is to answer,
-    /// from the live hierarchy, the one question static analysis of the game assembly
-    /// cannot: when the stash grid is made wider than 10 columns, does the panel have
-    /// room to draw it, or does an ancestor clip it?
+    /// The server makes the stash grid wider (see the server half). This half widens the
+    /// panels that draw it, so the grid fits without a sideways scrollbar:
     ///
-    /// The width itself comes from the server half, which edits the stash item
-    /// template. The two are independent -- this is useful with or without it, and on
-    /// a vanilla 10-wide stash it still reports how much room there is.
+    /// <list type="bullet">
+    ///   <item>the character screen (<see cref="StashWiden"/>), measured afterwards and
+    ///   the result sent to the server (<see cref="StashMeasure"/>,
+    ///   <see cref="MeasurementFile"/>);</item>
+    ///   <item>the scav, mail and hideout transfers and the trader screen
+    ///   (<see cref="ScreenWiden"/>);</item>
+    ///   <item>the flea market's add-offer window (<see cref="OfferWindowWiden"/>).</item>
+    /// </list>
+    ///
+    /// At launch it tells the server this game's screen (<see cref="ServerLink"/>) and
+    /// applies the stash sizes the server answers with (<see cref="ClientTemplates"/>).
+    /// In raid it widens nothing and puts the inventory screen back as it was.
+    ///
+    /// The DLL is still called <c>UltrawideStash.Probe.dll</c>: this half only measured
+    /// when it was first written, and the file name is kept so updates replace it.
     ///
     /// ## Why nothing here references Assembly-CSharp
     ///
@@ -30,14 +38,14 @@ namespace UltrawideStash.Probe
     /// the one the game runs, so every game member is resolved by its patched name at
     /// runtime and the plugin builds against any install.
     /// </summary>
-    [BepInPlugin(PluginGuid, "Ultrawide Stash Probe", PluginVersion)]
-    public class ProbePlugin : BaseUnityPlugin
+    [BepInPlugin(PluginGuid, "Ultrawide Stash", PluginVersion)]
+    public class ClientPlugin : BaseUnityPlugin
     {
         /// <summary>Shared with the server half so the two read as one mod.</summary>
         public const string PluginGuid = "com.mybutthasarash.ultrawidestash";
 
         /// <summary>Must match the csproj's Version.</summary>
-        public const string PluginVersion = "1.1.4";
+        public const string PluginVersion = "1.1.5";
 
         /// <summary>
         /// Every line this plugin writes is prefixed, so one grep finds the whole
@@ -57,12 +65,9 @@ namespace UltrawideStash.Probe
         /// <summary>
         /// Whether to take the slack out of the gear side and give it to the stash.
         ///
-        /// On by default, which reverses the original decision. Off was defensible in
-        /// the abstract -- rearranging someone's inventory screen uninvited is rude --
-        /// but the mod is called Ultrawide Stash and nobody installs it hoping it does
-        /// nothing. Worse, off is not merely inert: the panel stays vanilla, so the
-        /// probe measures a vanilla panel, writes 10 columns, and every later server
-        /// start reads that back. The mod then looks broken rather than disabled.
+        /// On by default: the mod is called Ultrawide Stash and nobody installs it hoping
+        /// it does nothing. Off is not merely inert either: the panel stays vanilla, the
+        /// measurement says 10 columns, and the server keeps the stash at 10.
         ///
         /// Setting it false puts the screen back on the next open.
         /// </summary>
@@ -119,7 +124,7 @@ namespace UltrawideStash.Probe
             GameTypes.Resolve();
 
             // This player's screen, to the server this game plays on, before the game
-            // asks it for the stash -- see ServerLink. A probe that cannot find the
+            // asks it for the stash -- see ServerLink. A plugin that cannot find the
             // game's UI widens nothing, so it says so.
             Say("this game's screen is " + ServerLink.Screen(Screen.width, Screen.height) + "; "
                 + ServerLink.Hello(Screen.width, Screen.height, _widen.Value && GameTypes.Ready, _reserve.Value));
@@ -130,7 +135,7 @@ namespace UltrawideStash.Probe
 
             if (!GameTypes.Ready)
             {
-                Say("probe off -- " + GameTypes.Failure
+                Say("the stash panel cannot be widened -- " + GameTypes.Failure
                     + ". The game's UI names have moved; nothing else is affected.");
                 return;
             }
@@ -140,20 +145,17 @@ namespace UltrawideStash.Probe
                 new Harmony(PluginGuid).Patch(
                     GameTypes.SimpleStashPanelShow,
                     postfix: new HarmonyMethod(
-                        AccessTools.Method(typeof(ProbePlugin), nameof(AfterStashShow))));
+                        AccessTools.Method(typeof(ClientPlugin), nameof(AfterStashShow))));
 
                 Say(_widen.Value
-                    ? "armed. Open your stash: it gets one measurement block, and the panel "
-                      + "gets widened."
-                    : "armed, but WidenStashPanel is false, so the panel will be left alone "
-                      + "and measured at its vanilla width. The measurement handed to the "
-                      + "server will say 10 columns, and the server will keep reading that "
-                      + "back on every start. Set WidenStashPanel to true if you wanted a "
-                      + "wider stash.");
+                    ? "ready. The stash panel is widened when it opens."
+                    : "ready, but WidenStashPanel is false, so the stash panel keeps its "
+                      + "vanilla width and the stash stays 10 columns wide. Set it to true "
+                      + "for a wider stash.");
             }
             catch (Exception e)
             {
-                Say("probe could not patch SimpleStashPanel.Show -- " + e.Message);
+                Say("could not patch SimpleStashPanel.Show -- " + e.Message);
             }
 
             PatchTraderScreen();
@@ -173,11 +175,11 @@ namespace UltrawideStash.Probe
                 new Harmony(PluginGuid).Patch(
                     GameTypes.ItemsPanelShow,
                     prefix: new HarmonyMethod(
-                        AccessTools.Method(typeof(ProbePlugin), nameof(BeforeItemsShow))));
+                        AccessTools.Method(typeof(ClientPlugin), nameof(BeforeItemsShow))));
             }
             catch (Exception e)
             {
-                Say("probe could not patch ItemsPanel.Show -- " + e.Message);
+                Say("could not patch ItemsPanel.Show -- " + e.Message);
             }
         }
 
@@ -216,11 +218,11 @@ namespace UltrawideStash.Probe
                 new Harmony(PluginGuid).Patch(
                     show,
                     postfix: new HarmonyMethod(
-                        AccessTools.Method(typeof(ProbePlugin), nameof(AfterTraderShow))));
+                        AccessTools.Method(typeof(ClientPlugin), nameof(AfterTraderShow))));
             }
             catch (Exception e)
             {
-                Say("probe could not patch TraderDealScreen.Show -- " + e.Message);
+                Say("could not patch TraderDealScreen.Show -- " + e.Message);
             }
         }
 
@@ -251,11 +253,11 @@ namespace UltrawideStash.Probe
                 new Harmony(PluginGuid).Patch(
                     show,
                     postfix: new HarmonyMethod(
-                        AccessTools.Method(typeof(ProbePlugin), nameof(AfterAddOfferShow))));
+                        AccessTools.Method(typeof(ClientPlugin), nameof(AfterAddOfferShow))));
             }
             catch (Exception e)
             {
-                Say("probe could not patch AddOfferWindow.Show -- " + e.Message);
+                Say("could not patch AddOfferWindow.Show -- " + e.Message);
             }
         }
 
@@ -435,10 +437,6 @@ namespace UltrawideStash.Probe
         }
 
         /// <summary>
-        /// Poll for the grid appearing. Cheap: a null check on every frame the stash
-        /// is not opening, and at most a short burst of hierarchy walks after it is.
-        /// </summary>
-        /// <summary>
         /// After the game's own Update, coroutines and animations: put back any widened
         /// transfer or trader screen something else has reset, before it is drawn.
         /// </summary>
@@ -447,6 +445,12 @@ namespace UltrawideStash.Probe
             ScreenWiden.Guard(Say);
         }
 
+        /// <summary>
+        /// The few frames of follow-up after a screen opens: the transfer and trader
+        /// screens' re-plans, the add-offer window's check, the character screen's watch
+        /// and its measurement once the grid exists. Cheap: a handful of null checks on
+        /// every frame nothing is opening.
+        /// </summary>
         private void Update()
         {
             ScreenWiden.Tick(Say);
@@ -506,13 +510,13 @@ namespace UltrawideStash.Probe
 
         private static int _framesWaited;
 
+        /// <summary><see cref="Say"/>, for the rest of the plugin.</summary>
+        internal static void Note(string message) => Say(message);
+
         /// <summary>
         /// Write one multi-line block, prefixing every line so it survives being
         /// read in a log alongside everything else.
         /// </summary>
-        /// <summary><see cref="Say"/>, for the rest of the plugin.</summary>
-        internal static void Note(string message) => Say(message);
-
         private static void Say(string message)
         {
             if (_log == null) return;
@@ -524,8 +528,3 @@ namespace UltrawideStash.Probe
         }
     }
 }
-
-
-
-
-

@@ -2,7 +2,7 @@ using System;
 using System.Text;
 using UnityEngine;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Takes the horizontal slack out of the gear side of the inventory screen and
@@ -546,7 +546,7 @@ namespace UltrawideStash.Probe
 
         /// <summary>
         /// The inventory screen's root: the nearest ancestor carrying a component named
-        /// <c>InventoryScreen</c>. Matched by name because the probe references no game
+        /// <c>InventoryScreen</c>. Matched by name because the plugin references no game
         /// assembly. Null if there is none, and then nothing is stretched.
         /// </summary>
         private static RectTransform FindScreenRoot(RectTransform from)

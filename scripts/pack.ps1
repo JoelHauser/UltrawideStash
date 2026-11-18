@@ -6,7 +6,9 @@
     The mod is two assemblies that install to two different places:
 
       SPT_Runtime/user/mods/UltrawideStash/UltrawideStash.Server.dll   the width
-      BepInEx/plugins/UltrawideStash.Probe.dll                         the measurement
+      BepInEx/plugins/UltrawideStash.Probe.dll                         the panels
+
+    The client DLL keeps the file name it had when it only measured; see its csproj.
 
     Refuses to pack if the csproj Version and the version baked into the source
     disagree, because a zip whose name does not match the DLL it contains is the
@@ -35,7 +37,7 @@ $SPTPath = Resolve-SptPath -SPTPath $SPTPath
 
 $root = Split-Path -Parent $PSScriptRoot
 $serverProj = Join-Path $root 'src\UltrawideStash.Server\UltrawideStash.Server.csproj'
-$probeProj = Join-Path $root 'src\UltrawideStash.Probe\UltrawideStash.Probe.csproj'
+$clientProj = Join-Path $root 'src\UltrawideStash.Client\UltrawideStash.Client.csproj'
 $testProj = Join-Path $root 'tests\UltrawideStash.Server.Tests\UltrawideStash.Server.Tests.csproj'
 
 function Get-XmlVersion {
@@ -60,24 +62,24 @@ function Get-SourceVersion {
 $serverCsprojVersion = Get-XmlVersion $serverProj
 $serverMetaVersion = Get-SourceVersion (Join-Path $root 'src\UltrawideStash.Server\ModMetadata.cs') 'new\("([0-9.]+)"\)'
 
-$probeCsprojVersion = Get-XmlVersion $probeProj
-$probeSourceVersion = Get-SourceVersion (Join-Path $root 'src\UltrawideStash.Probe\ProbePlugin.cs') 'PluginVersion = "([0-9.]+)"'
+$clientCsprojVersion = Get-XmlVersion $clientProj
+$clientSourceVersion = Get-SourceVersion (Join-Path $root 'src\UltrawideStash.Client\ClientPlugin.cs') 'PluginVersion = "([0-9.]+)"'
 
 Write-Host "server: csproj $serverCsprojVersion, ModMetadata $serverMetaVersion" -ForegroundColor Cyan
-Write-Host "probe:  csproj $probeCsprojVersion, PluginVersion $probeSourceVersion" -ForegroundColor Cyan
+Write-Host "client: csproj $clientCsprojVersion, PluginVersion $clientSourceVersion" -ForegroundColor Cyan
 
 if ($serverCsprojVersion -ne $serverMetaVersion) {
     Write-Host "Server version disagreement: csproj says $serverCsprojVersion, ModMetadata says $serverMetaVersion." -ForegroundColor Red
     exit 2
 }
 
-if ($probeCsprojVersion -ne $probeSourceVersion) {
-    Write-Host "Probe version disagreement: csproj says $probeCsprojVersion, ProbePlugin says $probeSourceVersion." -ForegroundColor Red
+if ($clientCsprojVersion -ne $clientSourceVersion) {
+    Write-Host "Client version disagreement: csproj says $clientCsprojVersion, ClientPlugin says $clientSourceVersion." -ForegroundColor Red
     exit 2
 }
 
-if ($serverCsprojVersion -ne $probeCsprojVersion) {
-    Write-Host "The two halves are at different versions ($serverCsprojVersion vs $probeCsprojVersion). They ship together." -ForegroundColor Red
+if ($serverCsprojVersion -ne $clientCsprojVersion) {
+    Write-Host "The two halves are at different versions ($serverCsprojVersion vs $clientCsprojVersion). They ship together." -ForegroundColor Red
     exit 2
 }
 
@@ -91,8 +93,8 @@ Write-Host "Building $version" -ForegroundColor Cyan
 dotnet build $serverProj -c Release -v minimal --nologo
 if ($LASTEXITCODE -ne 0) { Write-Host 'Server build failed.' -ForegroundColor Red; exit 1 }
 
-dotnet build $probeProj -c Release -v minimal --nologo "-p:SPTPath=$SPTPath"
-if ($LASTEXITCODE -ne 0) { Write-Host 'Probe build failed.' -ForegroundColor Red; exit 1 }
+dotnet build $clientProj -c Release -v minimal --nologo "-p:SPTPath=$SPTPath"
+if ($LASTEXITCODE -ne 0) { Write-Host 'Client build failed.' -ForegroundColor Red; exit 1 }
 
 # ---- checks ------------------------------------------------------------------
 
@@ -112,16 +114,16 @@ if (-not $SkipTests) {
 
 # ---- reference hygiene -------------------------------------------------------
 #
-# The probe must not carry an Assembly-CSharp reference. If it ever does, it will
+# The client must not carry an Assembly-CSharp reference. If it ever does, it will
 # load on this machine and fail on a launched install where the delta has renamed
 # the types -- the exact failure the no-reference design exists to prevent.
 
-$probeDll = Join-Path $root 'src\UltrawideStash.Probe\bin\Release\UltrawideStash.Probe.dll'
+$clientDll = Join-Path $root 'src\UltrawideStash.Client\bin\Release\UltrawideStash.Probe.dll'
 $cecil = Join-Path $SPTPath 'SPT_Runtime\Mono.Cecil.dll'
 
-if ((Test-Path $cecil) -and (Test-Path $probeDll)) {
+if ((Test-Path $cecil) -and (Test-Path $clientDll)) {
     Add-Type -Path $cecil
-    $asm = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($probeDll)
+    $asm = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($clientDll)
     $refs = $asm.MainModule.AssemblyReferences | ForEach-Object { $_.Name }
     $asm.Dispose()
 
@@ -129,12 +131,12 @@ if ((Test-Path $cecil) -and (Test-Path $probeDll)) {
 
     if ($bad) {
         Write-Host ''
-        Write-Host "Probe references game code it must not: $($bad -join ', ')" -ForegroundColor Red
+        Write-Host "Client references game code it must not: $($bad -join ', ')" -ForegroundColor Red
         exit 1
     }
 
     Write-Host ''
-    Write-Host "Probe references: $($refs -join ', ')" -ForegroundColor DarkGray
+    Write-Host "Client references: $($refs -join ', ')" -ForegroundColor DarkGray
     Write-Host 'No Assembly-CSharp, no spt-* reference.' -ForegroundColor Green
 }
 
@@ -154,7 +156,7 @@ New-Item -ItemType Directory -Force -Path $serverOut | Out-Null
 New-Item -ItemType Directory -Force -Path $pluginOut | Out-Null
 
 Copy-Item (Join-Path $root 'src\UltrawideStash.Server\bin\Release\net10.0\UltrawideStash.Server.dll') $serverOut
-Copy-Item $probeDll $pluginOut
+Copy-Item $clientDll $pluginOut
 
 # The standalone repair script ships with the mod, because the moment it is needed is the
 # moment the mod folder has been deleted -- so it has to be findable in the zip too.

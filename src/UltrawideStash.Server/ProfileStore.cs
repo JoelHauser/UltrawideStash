@@ -428,7 +428,7 @@ public static class ProfileStore
             if (string.Equals(s, "Horizontal", StringComparison.OrdinalIgnoreCase)) return 0;
             if (s == "0") return 0;
 
-            return StashOccupancy.Vertical;
+            return StashRepack.Vertical;
         }
         catch
         {

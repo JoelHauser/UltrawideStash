@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using HarmonyLib;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Tells the server this player's own screen, so the stash width is per player.
@@ -15,7 +15,7 @@ namespace UltrawideStash.Probe
     /// ## Why
     ///
     /// Up to 1.1.2 the measurement went into a file in the server mod's folder on this
-    /// PC. Under Fika the server is on the host's PC, so a friend's probe wrote to a file
+    /// PC. Under Fika the server is on the host's PC, so a friend's game wrote to a file
     /// nobody read, and every player got the width for the host's screen (Forge issue #4).
     /// The server now keeps one record per player, filled from two requests sent to
     /// whichever server this game is connected to:
@@ -24,7 +24,7 @@ namespace UltrawideStash.Probe
     ///   <item><c>/ultrawidestash/hello</c>, from the plugin's Awake -- before the game
     ///   has asked for its items or its profile -- with the screen and the two layout
     ///   settings. The server replies with the width this player's stash is now.</item>
-    ///   <item><c>/ultrawidestash/measured</c>, when the probe measures the stash panel,
+    ///   <item><c>/ultrawidestash/measured</c>, when the game measures the stash panel,
     ///   used from the next game start.</item>
     /// </list>
     ///
@@ -51,7 +51,7 @@ namespace UltrawideStash.Probe
                 .Append("{\"screen\":\"").Append(Screen(screenWidth, screenHeight)).Append("\",")
                 .Append("\"widenStashPanel\":").Append(widen ? "true" : "false").Append(',')
                 .Append("\"gearPanelReserve\":").Append(reserve.ToString("0.##", CultureInfo.InvariantCulture)).Append(',')
-                .Append("\"probeVersion\":\"").Append(Escape(ProbePlugin.PluginVersion)).Append("\"}")
+                .Append("\"probeVersion\":\"").Append(Escape(ClientPlugin.PluginVersion)).Append("\"}")
                 .ToString();
 
             try

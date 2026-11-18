@@ -4,18 +4,16 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
-    /// Writes what the probe measured to where the server half will read it.
+    /// Hands what the character screen measured to the server half: sent to the server
+    /// this game plays on (<see cref="ServerLink"/>), and written into the server mod's
+    /// folder on this PC.
     ///
-    /// ## Why this exists
-    ///
-    /// The server owns the stash width and the client owns the room to draw it. Until
-    /// 0.6.0 the probe worked out the right answer and then only logged it, so the
-    /// number a player needed was in a file they had to find, read and copy by hand --
-    /// and the server's fallback cap was a constant derived from one developer's
-    /// ultrawide. Writing it down closes the loop.
+    /// The server owns the stash width and the client owns the room to draw it. The
+    /// server predicts that room from the screen; a measurement of the real panel
+    /// corrects the prediction where another mod has laid the screen out differently.
     ///
     /// ## Where, and why that path
     ///
@@ -37,10 +35,10 @@ namespace UltrawideStash.Probe
     ///
     /// ## It never throws
     ///
-    /// A probe that breaks the stash screen is worse than no probe, and this is a
-    /// convenience rather than a feature. Every failure is one log line and nothing
-    /// else; the server falls back to its conservative estimate exactly as it does
-    /// when the probe is not installed at all.
+    /// A plugin that breaks the stash screen is worse than none, and this is a
+    /// correction rather than the feature. Every failure is one log line and nothing
+    /// else; the server keeps predicting from the screen, as it does when nothing has
+    /// been measured yet.
     /// </summary>
     internal static class MeasurementFile
     {
@@ -67,7 +65,7 @@ namespace UltrawideStash.Probe
             // To the server this game plays on, for this player alone. The file below is
             // only read by a server on this PC, and only for players whose game has never
             // reported in. See ServerLink.
-            ServerLink.Measured(json, ProbePlugin.Note);
+            ServerLink.Measured(json, ClientPlugin.Note);
 
             try
             {
@@ -113,7 +111,7 @@ namespace UltrawideStash.Probe
             var sb = new StringBuilder();
 
             sb.AppendLine("{");
-            sb.AppendLine("  \"_comment\": \"Written by the Ultrawide Stash probe. Delete this to "
+            sb.AppendLine("  \"_comment\": \"Written by Ultrawide Stash in the game. Delete this to "
                           + "re-measure, or set \\\"columns\\\" in ultrawidestash.config.json to "
                           + "override it.\",");
             sb.AppendLine("  \"maxColumns\": "
@@ -136,7 +134,7 @@ namespace UltrawideStash.Probe
             sb.AppendLine("  \"measuredAtUtc\": \"" + Escape(
                 DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture))
                 + "\",");
-            sb.AppendLine("  \"probeVersion\": \"" + Escape(ProbePlugin.PluginVersion) + "\"");
+            sb.AppendLine("  \"probeVersion\": \"" + Escape(ClientPlugin.PluginVersion) + "\"");
             sb.Append("}");
 
             return sb.ToString();

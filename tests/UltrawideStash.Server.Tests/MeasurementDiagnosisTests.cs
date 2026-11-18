@@ -26,7 +26,7 @@ public class MeasurementDiagnosisTests
         Assert.Null(Measured(true, 2580).Diagnosis());
     }
 
-    /// <summary>Files from older probes do not say, and must not be read as "could not".</summary>
+    /// <summary>Files from older versions do not say, and must not be read as "could not".</summary>
     [Fact]
     public void AnOlderFileHasNothingToExplain()
     {
@@ -70,11 +70,11 @@ public class MeasurementDiagnosisTests
     }
 
     /// <summary>
-    /// The file as the probe writes it -- field order, casing and the quoting of a
+    /// The file as the game writes it -- field order, casing and the quoting of a
     /// panel name are copied from MeasurementFile.Json.
     /// </summary>
     [Fact]
-    public void TheNewFieldsReadBackFromTheProbesFile()
+    public void TheNewFieldsReadBackFromTheGamesFile()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"uws-measured-{Guid.NewGuid():N}.json");
 
@@ -108,7 +108,7 @@ public class MeasurementDiagnosisTests
     }
 
     /// <summary>
-    /// Probes before 1.0.5 measured EFT's own 16:9 inventory frame, which they could
+    /// Versions before 1.0.5 measured EFT's own 16:9 inventory frame, which they could
     /// not widen, and wrote 10 columns on every install without UIScale.Reloaded
     /// (Forge issues #1 and #2). Their files are ignored; 1.0.5's and later are not.
     /// </summary>
@@ -124,9 +124,9 @@ public class MeasurementDiagnosisTests
     [InlineData(" 1.0.6 ", false)]
     [InlineData("1.1.0", false)]
     [InlineData("2.0", false)]
-    public void MeasurementsFromBeforeTheStretchAreNotTrusted(string? probeVersion, bool predates)
+    public void MeasurementsFromBeforeTheStretchAreNotTrusted(string? clientVersion, bool predates)
     {
-        var measured = new Measurement { MaxColumns = 10, ProbeVersion = probeVersion };
+        var measured = new Measurement { MaxColumns = 10, ClientVersion = clientVersion };
 
         Assert.Equal(predates, measured.PredatesTheStretch());
     }

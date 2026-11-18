@@ -3,31 +3,31 @@ using System.Globalization;
 namespace UltrawideStash.Server;
 
 /// <summary>
-/// The probe's own settings, read from its BepInEx config so the server can predict
-/// what the probe will do before the game has run.
+/// The game half's own settings, read from its BepInEx config so the server can
+/// predict what the game will draw before it has run.
 ///
 /// ## Why the server reads a client file
 ///
 /// The server's prediction (<see cref="StashFit.WidenedColumns"/>) assumed the gear side
 /// keeps the default 620 px per panel. A player who had raised <c>GearPanelReserve</c>
-/// -- a 5120x1440 tester had it at about 1000 -- got a 39-wide grid in a panel the probe
-/// only widened to 27, so a sideways scrollbar; and when the probe's 27 reached the next
-/// server start, the stash was narrowed and repacked. Reading the same number the probe
-/// reads makes the first start agree with the probe.
+/// -- a 5120x1440 tester had it at about 1000 -- got a 39-wide grid in a panel the game
+/// only widened to 27, so a sideways scrollbar; and when the measured 27 reached the next
+/// server start, the stash was narrowed and repacked. Reading the same number the game
+/// reads makes the first start agree with it.
 ///
 /// The file is <c>&lt;SPT&gt;/BepInEx/config/com.mybutthasarash.ultrawidestash.cfg</c>, on
 /// the same install as <c>SPT_Runtime/user/mods/UltrawideStash</c>. A dedicated server has
-/// none, and gets the defaults -- which is also what the probe uses when it has no file.
+/// none, and gets the defaults -- which is also what the game uses when it has no file.
 /// </summary>
 public readonly record struct ClientSettings(bool WidenStashPanel, float GearPanelReserve, bool Found)
 {
-    /// <summary>The probe's GUID, and so its config file's name.</summary>
+    /// <summary>The mod's GUID, and so the game half's config file's name.</summary>
     public const string ConfigFileName = "com.mybutthasarash.ultrawidestash.cfg";
 
-    /// <summary>The probe's default, <c>StashWiden.DefaultReservePerPanel</c>.</summary>
+    /// <summary>The game half's default, <c>StashWiden.DefaultReservePerPanel</c>.</summary>
     public const float DefaultReserve = 620f;
 
-    /// <summary>What the probe does with no config file.</summary>
+    /// <summary>What the game half does with no config file.</summary>
     public static readonly ClientSettings Defaults = new(true, DefaultReserve, false);
 
     /// <summary>True when the reserve is not the default, so the player should hear about it.</summary>
@@ -51,7 +51,7 @@ public readonly record struct ClientSettings(bool WidenStashPanel, float GearPan
     {
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {
-            note = "no probe config on this install, so its defaults";
+            note = "no game config on this install, so its defaults";
             return Defaults;
         }
 
@@ -61,7 +61,7 @@ public readonly record struct ClientSettings(bool WidenStashPanel, float GearPan
         }
         catch (Exception e)
         {
-            note = $"probe config unreadable ({e.Message}), so its defaults";
+            note = $"game config unreadable ({e.Message}), so its defaults";
             return Defaults;
         }
     }
@@ -111,7 +111,7 @@ public readonly record struct ClientSettings(bool WidenStashPanel, float GearPan
             }
         }
 
-        note = $"probe config: WidenStashPanel {widen}, GearPanelReserve {reserve.ToString("0.##", CultureInfo.InvariantCulture)}";
+        note = $"game config: WidenStashPanel {widen}, GearPanelReserve {reserve.ToString("0.##", CultureInfo.InvariantCulture)}";
 
         return new ClientSettings(widen, reserve, true);
     }

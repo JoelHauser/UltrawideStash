@@ -26,8 +26,8 @@ public static class StashLayout
     /// needed it least.
     ///
     /// The screen-aware ceiling now lives in <see cref="ColumnChoice"/>, which prefers
-    /// the probe's measurement and falls back to <see cref="StashFit.ConservativeColumns"/>.
-    /// What is left here is only a bound on absurdity.
+    /// the game's measurement and falls back to <see cref="StashFit.WidenedColumns"/>,
+    /// the prediction from the screen. What is left here is only a bound on absurdity.
     /// </summary>
     public const int MaxColumns = StashFit.AbsoluteMaxColumns;
 
@@ -61,7 +61,7 @@ public static class StashLayout
     /// <param name="deepestOccupiedRow">
     /// One past the last row that must stay addressable, or 0 when nothing is stored.
     /// Rows are never cut below this, because an item outside the grid is an item the
-    /// player has lost. See <see cref="StashOccupancy"/>.
+    /// player has lost. See <see cref="ProfileStore.StashContents.TemplateRowsNeeded"/>.
     ///
     /// The caller must pass the **ladder-aware** floor from
     /// <see cref="StashLadder.RowFloors"/>, not just the depth of the profiles sitting

@@ -77,20 +77,25 @@ The five player stashes, all `cellsH: 10`, verified against `items.json` by
 Deliberately excluded: `5c0a596086f7747bef5731c2` (dev stash 10x300), the 8-wide
 containers (they would trip the narrowing guard anyway), and every hideout/scav stash.
 
-## The open question, and why the probe exists
+## "The probe" is the client half
 
-`SimpleStashPanel._stashScroll` is a `ScrollRect`. Whether its viewport stretches with
-the canvas or is pinned to a fixed width is **serialized prefab data** -- not readable
-from the assembly, at all, by any amount of Cecil. So it is measured at runtime instead.
+Until 1.1.4 the BepInEx plugin was called the probe, because at 0.1.0 it only measured.
+It now does the widening, so after 1.1.4 the name was retired from everything a player
+reads and from the code: project `src/UltrawideStash.Client`, namespace
+`UltrawideStash.Client`, `ClientPlugin`, display name "Ultrawide Stash". Two names stay,
+because changing them breaks installs:
 
-This is the same discipline as `ScreenFit` in the LoadingRaid repo, for the same reason,
-and the notes there apply: a number taken off the live hierarchy holds at any resolution
-and any screen shape without knowing how the UI was authored.
+- **The DLL is still `UltrawideStash.Probe.dll`** (`<AssemblyName>`), so an update
+  unzipped over an old install replaces it instead of leaving a second copy.
+- **The JSON field `probeVersion`** in the measurement file, the player records and the
+  hello/measured requests. Mixed versions read it from each other. The C# property is
+  `ClientVersion`.
 
-`StashMeasure` walks from the stash's `GridView` up to the `Canvas`, printing each
-ancestor's rect, its horizontal anchors (`STRETCH` vs `fixed`) and its component type
-names. The `fixed` ancestor nearest the canvas is what will clip a widened grid, and its
-components say what a fix has to change. **Read that log before writing any UI patch.**
+The history below says "probe" wherever that was the name at the time.
+
+Prefab layout (anchoring, whether a panel stretches) is **serialized data** that no
+amount of Cecil can read, so the client measures it off the live hierarchy. **Read the
+measurement block's `CHECK` line before writing any UI patch.**
 
 ## Capacity, the guard, and the bug that guard had
 
@@ -228,10 +233,15 @@ Rules worth keeping:
 
 ### The occupancy arithmetic
 
-`StashOccupancy.Place` computes `Y + height` **with rotation applied**, because
-`ItemRotation.Vertical = 1` swaps the template's width and height. Getting that backwards
-under-reports depth, which is the direction that loses items. `ProfileStore`'s rotation reading
-an unrecognised rotation value **as rotated** for the same reason.
+`StashRepack.Placement.EffectiveHeight` (and `ProfileStore.StashContents.TemplateRowsNeeded`,
+which sums `Y` with it) applies rotation, because `StashRepack.Vertical = 1` swaps the
+template's width and height. Getting that backwards under-reports depth, which is the
+direction that loses items. `ProfileStore` reads an unrecognised rotation value **as
+rotated** for the same reason. `StashDepthTests` pins it.
+
+There used to be a separate `StashOccupancy` doing the same arithmetic, which by 1.1.4
+only its own tests called -- tests of code the mod no longer ran. Removed after 1.1.4,
+its tests moved onto the real path.
 
 Only the stash's direct children count. An item inside a backpack has a `y` belonging to
 the backpack's grid, and reading it as a stash row invents depth that is not there.
@@ -356,43 +366,42 @@ both ends.
 src/UltrawideStash.Server/            .NET 10, SPTarkov.Server.Core
   ModMetadata.cs      the one IModMetadata; SPT throws on a second in a folder
   StashSettings.cs    ultrawidestash.config.json; "columns" is "auto" or an int
-  StashFit.cs         canvas arithmetic -- aspect ratio to canvas width to columns
-  Measurement.cs      reads ultrawidestash.measured.json, the probe's answer
-  ColumnChoice.cs     config + measurement -> one width, with a reason for the log
+  SavedScreen.cs      EFT's saved resolution, from the registry
+  ClientSettings.cs   the client's BepInEx config, read so the prediction matches it
+  StashFit.cs         canvas arithmetic, and WidenedColumns: the prediction from a screen
+  Measurement.cs      reads ultrawidestash.measured.json, the client's measurement
+  ColumnChoice.cs     config + measurement + screen -> one width, with a reason for the log
   StashLadder.cs      the hideout upgrade order, and the row floor it forces
   StashLayout.cs      the shape decision -- pure ints, no SPT type
-  StashOccupancy.cs   footprint maths with rotation -- also pure
-  StashRepack.cs      relocation into the stash, and overflow into the sorting table
-  ProfileStore.cs     reads a profile's stash off disk; writes moves back, with backup
-  StashWidener.cs     IOnLoad at PostLoad; the only file that touches SPT or the database
+  StashShapes.cs      ShallowestThatFits, and one player's own five shapes
+  StashRepack.cs      relocation into the stash, overflow into the sorting table, rotation
+  ProfileStore.cs     a profile's stash, parsed; writes moves back, with backup
+  BackupStore.cs      where backups go (local AppData) and how many are kept
+  PlayerRecord.cs     players/<profileId>.json: one player's screen, settings, measurement
+  PlayerRouter.cs     /ultrawidestash/hello and /measured
+  PlayerStashes.cs    per-player widths: choose, repack, serve, size
+  PlayerPatches.cs    ServeStashPatch and StashSizePatch, the Harmony side of that
+  StashWidener.cs     IOnLoad at PostLoad: the startup run
 
-src/UltrawideStash.Probe/             net472, BepInEx -- widens the panel in the menu, never in raid
+src/UltrawideStash.Client/            net472, BepInEx; builds UltrawideStash.Probe.dll
+  ClientPlugin.cs     BepInPlugin; patches SimpleStashPanel.Show, ItemsPanel.Show (inRaid
+                      gated), TraderDealScreen.Show, AddOfferWindow.Show
   GameTypes.cs        every game member, resolved by patched name, in one place
-  StashMeasure.cs     the walk up the RectTransform chain, and the report
-  StashWiden.cs       narrows LeftSide, grows Stash Panel, and puts both back for a raid
-  StashPlan.cs        the character-screen widening arithmetic -- pure, also compiled into the tests
-  MeasurementFile.cs  writes the measurement into the server mod's folder
+  ServerLink.cs       the hello at Awake, and sending the measurement
+  ClientTemplates.cs  applies the hello's stash sizes to the game's own templates
+  StashWiden.cs       character screen: stretch the frame, narrow LeftSide, grow Stash
+                      Panel, put it all back in raid
+  StashPlan.cs        the character-screen widening arithmetic -- pure, linked into the tests
+  StashMeasure.cs     the walk up the RectTransform chain, the report and the CHECK line
+  MeasurementFile.cs  the measurement: to the server, and into the server mod's folder
   Companions.cs       which stash-touching plugins are loaded, for the report
-  ScreenLayout.cs     transfer-screen planner -- pure, also compiled into the tests
+  ScreenLayout.cs     transfer/trader-screen planner -- pure, linked into the tests
   ScreenWiden.cs      scav/mail/hideout transfer screens and the trader screen: identify,
                       map, grow, check, and hold the layout (Guard, from LateUpdate)
   OfferWindowWiden.cs the flea market's add-offer window: asks its layout for more width
-  ProbePlugin.cs      BepInPlugin; postfix on SimpleStashPanel.Show, prefix on
-                      ItemsPanel.Show, both gated on the game's inRaid flag
 
-tests/UltrawideStash.Server.Tests/    xunit, 270 tests
-  StashFitTests.cs              canvas width per aspect, and the conservative ceiling
-  RowDriftTests.cs              how the row count moves across restarts, and why it stops
-  ColumnChoiceTests.cs          auto/measured/clamped/overridden, and the fit invariant
-  StashLadderTests.cs           the hideout ladder, and the stranding it prevents
-  StashLayoutTests.cs           column/row decisions against the five real stashes
-  StashOccupancyTests.cs        footprint and rotation arithmetic
-  StashRepackTests.cs           relocation, including the narrow-to-vanilla path
-  ProfileStoreTests.cs          read/write round trips against real files on disk
-  SortingTableOverflowTests.cs  the 7-wide overflow, end to end through a profile
-  ScreenLayoutTests.cs          the transfer-screen planner; links the probe's ScreenLayout.cs
-  StashPlanTests.cs             the character-screen plan; links StashPlan.cs; agrees with StashFit
-  MeasurementDiagnosisTests.cs  the server log's "could not widen" sentence, old and new files
+tests/UltrawideStash.Server.Tests/    xunit, 291 tests; one file per server type, plus
+                                      ScreenLayout.cs and StashPlan.cs linked from the client
 
 scripts/
   pack.ps1            build both halves, test, check references, stage, zip, install
@@ -400,11 +409,12 @@ scripts/
   repair-stash.ps1    standalone recovery; needs only PowerShell, ships in the zip
 ```
 
-The four pure files -- `StashLayout`, `StashOccupancy`, `StashRepack` and the parsing
-half of `ProfileStore` -- carry all the logic worth testing and touch no SPT type between
-them. `StashWidener` is the only place that knows SPT exists, and it is deliberately thin.
+The pure files -- `StashLayout`, `StashShapes`, `StashRepack`, `ColumnChoice`,
+`StashFit` and the parsing half of `ProfileStore` -- carry the logic worth testing and
+touch no SPT type. `StashWidener`, `PlayerStashes` and `PlayerPatches` are where SPT is
+touched.
 
-### Why the probe references no game assembly
+### Why the client references no game assembly
 
 Same reason as LoadingRaid, and worth not relearning: the `Assembly-CSharp.dll` in
 `Managed` is **not** the one the game runs. The Launcher applies
@@ -506,33 +516,12 @@ game and guessing at it.
   for each template in isolation and wrong for a player, because players move between
   templates. Ask what can change identity under a rule before trusting the rule.
 
-## Untested, and what to look for
+## What has and has not run in game
 
-**Nothing in this repo has executed in the game.** In rough order of risk:
-
-1. **Writing to profiles.** 0.4.0 onward edits the player's profile JSON. Backup, temp
-   file, replace-last, all-or-nothing per stash, and 75 tests -- but it has never written
-   a real profile. On a first widen the log should say **`0 item(s) relocated`**, because
-   widening alone can strand nothing. Anything else on a plain widen is a bug.
-2. **Does the widened grid draw, or clip?** The whole point. Read the probe's
-   `STRETCH`/`fixed` column.
-3. **The sorting-table overflow.** Re-parenting an item to the sorting table
-   (`parentId`, `slotId` "hideout") is written from the JSON shape, not from watching the
-   game do it. Only fires when the stash cannot take everything back.
-4. **Does the Harmony patch fire?** `SimpleStashPanel.Show` patched with
-   `MonoBehaviour __instance`. The base chain is SimpleStashPanel -> UIInputNode ->
-   InputNode -> InputNodeAbstract -> `Sirenix.OdinInspector.SerializedMonoBehaviour` ->
-   MonoBehaviour, so it is a genuine supertype and Harmony should accept it.
-5. **Is the tallest GridView the stash?** True on paper by a wide margin. An open
-   container has its own GridView.
-6. **A real played profile.** The only one on this box is a 0.4 KB stub, so every profile
-   test runs against synthesised JSON. The key uncertainty is whether a real profile has
-   shapes the parser skips -- it ignores anything whose `location` is not an object,
-   which is right for magazines but has not met the full variety.
-7. **`repair-stash.ps1` against a real profile.** Verified on synthesised data only, and
-   it sizes every item as 1x1 because it has no database.
-8. **`Grid.OutOfBoundsItems`** is resolved optionally and reported. Anything but `none`
-   means something went wrong.
+README.md's *Status* section is the one list; keep it current rather than a copy here.
+Still open there: the sorting-table overflow (re-parenting written from the JSON shape,
+never watched), `repair-stash.ps1` on a real profile (it sizes every item 1x1), the
+hideout area transfer screen, and per-player widths under a real Fika session.
 
 ## The residual risk, and why it stops there
 
@@ -561,7 +550,7 @@ footprints, which only makes the packing more conservative -- never less.
 - GUID `com.mybutthasarash.ultrawidestash`, shared by both halves, following the prefix
   the sibling repos are registered under.
 - Version lives in each csproj `<Version>`, in `ModMetadata.Version` and in
-  `ProbePlugin.PluginVersion`. `pack.ps1` refuses to pack if any of them disagree.
+  `ClientPlugin.PluginVersion`. `pack.ps1` refuses to pack if any of them disagree.
 - Commit as `Joel Hauser <jhauser@bostonlightsource.com>` -- **not** the gmail address.
   Configured locally; the global identity is unset on this machine.
 - Commit bodies are prose and end with a `Co-Authored-By:` trailer.
@@ -631,8 +620,8 @@ Two things were therefore sized to one monitor and shipped to everybody:
 - **`columns: 16` as the default** is 1009px against vanilla's 631, on a canvas with no
   spare width. The default is now `"auto"`.
 
-`StashFit.ConservativeColumns` is the no-measurement fallback and is deliberately
-pessimistic: `10 + floor((canvasWidth - 1920) / 63)`. It grants only canvas width that
+`StashFit.ConservativeColumns` (superseded in 0.9.3 by `WidenedColumns`, deleted after
+1.1.4) was the no-measurement fallback and was deliberately pessimistic: `10 + floor((canvasWidth - 1920) / 63)`. It grants only canvas width that
 exists beyond 16:9 and assumes the panel has zero slack of its own, because the slack is
 the one thing the server cannot see. On any 16:9 screen that is vanilla 10 -- **an
 unmeasured 16:9 install changes nothing at all**, which is the correct default.
@@ -704,18 +693,6 @@ Still not fixed, and the trade is clearer now: persisting the applied shape per 
 would hold the high-water mark, but that is a state file this mod does not otherwise
 need, and holding it means permanently granting capacity the compensation exists to
 avoid. **Left as is deliberately.** Flagged to the user.
-
-### Still not run in the game
-
-Build clean at 0 warnings, 136 logic tests, 19 database checks, references still clean,
-packed to `releases\UltrawideStash_V0.6.0.zip`. The new untested surface is the handshake
-itself: the probe writing the file, and the server reading it. Both halves fail safe if it
-does not work, but the happy path is unproven -- check the file appears after opening the
-stash, and that the next start logs `auto: N columns, from the probe's measurement`.
-
-**Next work is to read the user's probe log**, specifically the `STRETCH`/`fixed` chain,
-and write the client-side width fix against it. Do not write UI patches before that log
-exists -- the anchoring is unknowable from here, and a guess costs a round trip.
 
 ### 1.0.0, released 2026-09-22
 
@@ -836,6 +813,18 @@ the same but for its version. Tagged `v1.1.2`, `UltrawideStash_V1.1.2.zip` (sha2
 checks. **Verified in game** at 3440x1440 before release: 680 -> 1250 px, 19 columns,
 `fits, 4.0 px spare`. The hideout area transfer still has not been played through.
 
+### 1.1.5, released 2026-11-17 -- the probe name retired, dead code out
+
+No behaviour change meant; only text, names and dead code, checked line by line against
+the diff of `src/` before release. See *"The probe" is the
+client half* for the renames and the two names kept. Also: `StashOccupancy` and
+`StashFit.ConservativeColumns` deleted (their tests moved to `StashDepthTests` or dropped;
+291 tests); comments and the uninstall note now say the game's Sorting Table rescue
+works; the server's "NOT WIDENED YET -- open your stash and restart" warnings, wrong
+since 0.9.3's prediction, replaced by one "No change was made" line that names the
+16:9 or unknown-screen cause. **Not run in game**: the client's changed log lines and
+BepInEx display name have only been compiled.
+
 ## Verified in game, 2026-09-21
 
 Everything here came off a live 3440x1440 install, not from the assembly.
@@ -921,7 +910,10 @@ screen 1920x1080 -- CHECK: viewport 632.0 px vs grid 1198.0 px -- OVERFLOW by 56
 ```
 
 Self-healing on the next server start, because the probe rewrites the measurement for
-the new resolution -- but broken in between. **Not fixed.**
+the new resolution -- but broken in between. **Narrowed since:** 1.0.4 puts the panel
+back and says why rather than half-widening it, and from 1.1.3 the game reports its
+screen at every start, so a player whose width changed is re-planned then. The grid
+still scrolls sideways until that next game start.
 
 ### The grid is global; the widening is one screen
 
@@ -1070,7 +1062,7 @@ and the canvas width follows from the screen resolution, which the server can re
 without the game running: **Unity saves it to
 `HKCU\Software\Battlestate Games\EscapeFromTarkov`** as `Screenmanager Resolution
 Width_h<hash>` / `Height_h<hash>`. Value names are found by prefix, since the hash is
-not something to hard-code. See `ScreenProbe`.
+not something to hard-code. See `SavedScreen` (`ScreenProbe` until 1.1.4).
 
 So the server now predicts what the client will do, in `StashFit.WidenedColumns`. The
 layout, measured off a live client, is:
@@ -1091,7 +1083,7 @@ rather than shipping.
 
 Two things follow:
 
-- `ConservativeColumns` is now only history. It assumed the panel was pinned and granted
+- `ConservativeColumns` was now only history (deleted after 1.1.4). It assumed the panel was pinned and granted
   every pixel past 16:9, answering **20** on a 2580 canvas -- one more column than the
   widened panel can show, which is a horizontal scrollbar.
 - A measurement whose `screen` does not match the detected resolution is **discarded**.
@@ -1321,7 +1313,7 @@ rows kept`. Client at the faked 3840 canvas: grid `39x68`, panel `680.0 -> 2510.
 the screenshot fills to the right edge. Back at 2580 the 39 grid scrolled sideways, as it
 should. Everything restored afterwards and hash-checked against the backup.
 **This is a simulation on a 3440x1440 display, not a 32:9 monitor.** What it cannot
-cover: the server reading 5120x1440 from the registry (`ScreenProbe`) on a real first
+cover: the server reading 5120x1440 from the registry (`SavedScreen`) on a real first
 start, and anything about a real 32:9 display the faked canvas scale does not reproduce
 (the canvas was also 1607 tall, not 1080). It still needs a run on a physical monitor,
 and every release note has to say so. **Superseded 2026-09-29:** a player ran 1.0.5 on
@@ -1629,7 +1621,7 @@ SellAllButton                 x  125..375, y -490..-434  button
 Left Glow                     x -960..-315, y 152..540   may slide, over the gear column
 ```
 
-Two faults, both fixed (uncommitted, see the memory note for state):
+Two faults, both fixed and released in 1.1.2:
 
 - **One neighbour only.** The containers column has no margin of its own; the room is
   ~350 px left of the gear column. `ScreenLayout.Plan` now tries **trains**, shortest

@@ -22,7 +22,7 @@ namespace UltrawideStash.Server;
 ///
 /// Not authoritative. It is the resolution Unity last saved, which is the one the game
 /// will start at, but a player who changes resolution mid-session leaves it stale until
-/// the game writes it again. It is a starting estimate; a probe measurement of the real
+/// the game writes it again. It is a starting estimate; the game's measurement of the real
 /// panel supersedes it.
 ///
 /// Windows-only, by nature: there is no registry on Linux, and a dedicated server has
@@ -30,7 +30,7 @@ namespace UltrawideStash.Server;
 /// the config, which is 1920x1080 and yields a vanilla stash -- the safe answer when we
 /// genuinely do not know.
 /// </summary>
-public static class ScreenProbe
+public static class SavedScreen
 {
     /// <summary>
     /// Unity writes its player prefs under HKCU\Software\&lt;company&gt;\&lt;product&gt;,

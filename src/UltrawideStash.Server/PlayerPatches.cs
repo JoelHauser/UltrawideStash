@@ -74,7 +74,7 @@ public static class ServeStashPatch
     {
 #if SIMULATE_REPLACED_ITEMS
         // Test builds only (-p:DefineConstants=SIMULATE_REPLACED_ITEMS): serve the database
-        // as it is, the way the Fika host in Forge issue #5 did, so the probe's own fix
+        // as it is, the way the Fika host in Forge issue #5 did, so the game's own fix
         // (ClientTemplates) can be seen working in a real game. Never in a release build.
         return true;
 #else

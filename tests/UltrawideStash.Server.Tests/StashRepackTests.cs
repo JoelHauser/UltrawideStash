@@ -88,7 +88,7 @@ public class StashRepackTests
     [Fact]
     public void RotationIsRespectedWhenPlacing()
     {
-        var upright = At("rifle", 20, 0, w: 5, h: 2, r: StashOccupancy.Vertical);
+        var upright = At("rifle", 20, 0, w: 5, h: 2, r: StashRepack.Vertical);
 
         Assert.Equal(2, upright.EffectiveWidth);
         Assert.Equal(5, upright.EffectiveHeight);

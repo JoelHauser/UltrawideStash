@@ -4,7 +4,7 @@ using System.Collections;
 using System.Text;
 using UnityEngine;
 
-namespace UltrawideStash.Probe
+namespace UltrawideStash.Client
 {
     /// <summary>
     /// Measures the stash on screen and writes one report to the BepInEx log.
@@ -77,8 +77,8 @@ namespace UltrawideStash.Probe
         /// threw. False means the grid does not exist yet and the caller should try
         /// again next frame.
         ///
-        /// Never throws into the caller: a probe that breaks the stash screen is
-        /// worse than no probe.
+        /// Never throws into the caller: a plugin that breaks the stash screen is
+        /// worse than none.
         /// </summary>
         internal static bool Report(MonoBehaviour panel, Action<string> log)
         {
@@ -110,18 +110,12 @@ namespace UltrawideStash.Probe
                     _settled = 0;
                 }
 
-                // Widening runs on every open, and deliberately not behind the
-                // once-per-resolution gate the report uses. Whether the screen is
-                // rebuilt between opens is not something the probe can know, and a
-                // widening that ran only the first time would silently stop working
-                // on the second. Apply is idempotent, so re-running it costs a
-                // comparison. Only the first pass is logged: the settle loop calls
-                // this four times and three of them have nothing left to do.
                 // A safety net for the case where Show ran before the panel was in
-                // its final place. Skipped outright when WidenNow already succeeded,
-                // because the settle loop calls this four times and each call walks
-                // the chain -- work that buys nothing on a screen that opened
-                // normally, and that the player feels as a hitch.
+                // its final place; WidenNow, from Show, does the widening on every
+                // open. Skipped outright when WidenNow already succeeded, because the
+                // settle loop calls this four times and each call walks the chain --
+                // work that buys nothing on a screen that opened normally, and that
+                // the player feels as a hitch.
                 if (Widen != null && !_widenSaid)
                 {
                     ApplyWiden(gridView, Widen.Value);
@@ -429,7 +423,7 @@ namespace UltrawideStash.Probe
             var canWiden = plan.HasValue && plan.Value.CanWiden;
 
             var whyNot = Widen == null
-                ? "WidenStashPanel is false in BepInEx/config/" + ProbePlugin.PluginGuid + ".cfg"
+                ? "WidenStashPanel is false in BepInEx/config/" + ClientPlugin.PluginGuid + ".cfg"
                 : plan.HasValue
                     ? plan.Value.WhyNot
                     : "the stash panel was never widened or planned";
@@ -701,7 +695,7 @@ namespace UltrawideStash.Probe
         /// True when this node's width is computed from its children rather than
         /// imposed on them, so it cannot be what clips the grid.
         ///
-        /// Checked by component name because the probe does not reference
+        /// Checked by component name because the plugin does not reference
         /// UnityEngine.UI -- see the csproj on why nothing here is compiled against
         /// the game's own assemblies.
         /// </summary>

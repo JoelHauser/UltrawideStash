@@ -38,7 +38,7 @@ namespace UltrawideStash.Server;
 ///
 /// ## When a player's width changes
 ///
-/// At their game's start, from <c>/ultrawidestash/hello</c>, which the probe sends from
+/// At their game's start, from <c>/ultrawidestash/hello</c>, which the game sends from
 /// its Awake: before the game has asked for its items or its profile. If the width
 /// differs from the one their stash is in, the stash is repacked then, in the loaded
 /// profile, with the same backup and the same rules as the startup repack. A
@@ -102,9 +102,6 @@ public class PlayerStashes(
 
     /// <summary>Startup is done; per-player shapes are live.</summary>
     public void Open() => Ready = true;
-
-    /// <summary>The server-wide width.</summary>
-    public int DefaultColumns => defaultColumns;
 
     /// <summary>The record for a profile, or null.</summary>
     public PlayerRecord? RecordFor(string profileId) => PlayerRecord.Read(recordFolder, profileId);
@@ -171,7 +168,7 @@ public class PlayerStashes(
     /// <summary>
     /// The five stash sizes this player's game must use, as <c>WxH</c> by template id: their
     /// own shapes, or the database's for a player who shares them. Sent back in the reply to
-    /// the hello, and applied by the probe to the game's own copy of the templates.
+    /// the hello, and applied by the game to its own copy of the templates.
     ///
     /// ## Why the game is told twice (1.1.4)
     ///
@@ -179,7 +176,7 @@ public class PlayerStashes(
     /// server logged serving a player their own 19-wide stash, and their game measured the
     /// host's 10-wide one: something on that server replaced the response after this mod
     /// built it. The same path worked in a real game on a server without whatever that is.
-    /// Telling the probe directly does not depend on the items response surviving the trip.
+    /// Telling the game directly does not depend on the items response surviving the trip.
     /// </summary>
     public Dictionary<string, string> ShapesFor(MongoId sessionId)
     {
@@ -238,8 +235,8 @@ public class PlayerStashes(
     }
 
     /// <summary>
-    /// A game has started: record what its probe reports, and re-plan that player's
-    /// stash if their width has changed. Returns the line the probe logs.
+    /// A game has started: record what it reports, and re-plan that player's stash if
+    /// their width has changed. Returns the line the game logs.
     /// </summary>
     public async Task<string> Hello(MongoId sessionId, HelloRequest hello, CancellationToken token)
     {
@@ -252,7 +249,7 @@ public class PlayerStashes(
         record.Screen = hello.Screen;
         record.WidenStashPanel = hello.WidenStashPanel;
         record.GearPanelReserve = hello.GearPanelReserve > 0f ? hello.GearPanelReserve : ClientSettings.DefaultReserve;
-        record.ProbeVersion = hello.ProbeVersion;
+        record.ClientVersion = hello.ClientVersion;
         record.SeenAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
         Save(id, record);
@@ -305,7 +302,7 @@ public class PlayerStashes(
         return line;
     }
 
-    /// <summary>The probe measured its stash panel: keep it for this player's next game start.</summary>
+    /// <summary>The game measured its stash panel: keep it for this player's next game start.</summary>
     public string Measured(MongoId sessionId, MeasuredRequest measured)
     {
         if (string.IsNullOrEmpty(recordFolder)) return "the server is still starting";
@@ -320,7 +317,7 @@ public class PlayerStashes(
             CanvasWidth = measured.CanvasWidth,
             PanelWidth = measured.PanelWidth,
             MeasuredAtUtc = measured.MeasuredAtUtc,
-            ProbeVersion = measured.ProbeVersion,
+            ClientVersion = measured.ClientVersion,
             CanWiden = measured.CanWiden,
             WhyNot = measured.WhyNot,
         };
