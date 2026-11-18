@@ -552,7 +552,10 @@ footprints, which only makes the packing more conservative -- never less.
 - Version lives in each csproj `<Version>`, in `ModMetadata.Version` and in
   `ClientPlugin.PluginVersion`. `pack.ps1` refuses to pack if any of them disagree.
 - Commit as `Joel Hauser <jhauser@bostonlightsource.com>` -- **not** the gmail address.
-  Configured locally; the global identity is unset on this machine.
+  Set in this repo's **local** git config. The global identity on this machine is the
+  gmail address (it was unset when these notes were first written), so a clone without
+  the local setting commits as gmail. Check `git config user.email` in a fresh clone;
+  on 2026-11-17 the local identity was missing and had to be set again.
 - Commit bodies are prose and end with a `Co-Authored-By:` trailer.
 - **Write commit messages to a file and use `git commit -F <file>`** with
   `UTF8Encoding($false)`. Piping a here-string adds a BOM in Windows PowerShell 5.1, and
@@ -824,6 +827,13 @@ works; the server's "NOT WIDENED YET -- open your stash and restart" warnings, w
 since 0.9.3's prediction, replaced by one "No change was made" line that names the
 16:9 or unknown-screen cause. **Not run in game**: the client's changed log lines and
 BepInEx display name have only been compiled.
+
+Tagged `v1.1.5` on the zip commit `e33bfac` (code in `c120d04`),
+`UltrawideStash_V1.1.5.zip` (86,870 bytes, sha256 `764ed424453e6d79...`), DLLs stamped
+`1.1.5+c120d04`, published as Latest. Installed on `H:\SPT4.1.X` the same day.
+`pack.ps1` always rewrites `releases\UltrawideStash_V<version>.zip`, so a local
+`-Install` of unreleased changes at an already-released version overwrites the
+published zip in the working tree -- set it aside first, or bump the version.
 
 ## Verified in game, 2026-09-21
 
